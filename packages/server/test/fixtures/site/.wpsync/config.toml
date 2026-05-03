@@ -1,0 +1,4 @@
+site_url = "https://example.com"
+content_dir = "."
+enabled_types = ["post", "page"]
+username = "fixture"

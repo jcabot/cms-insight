@@ -1,0 +1,35 @@
+{
+  "name": "@cms-insight/server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "bin": {
+    "cms-insight": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts start",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@cms-insight/plugin-api": "workspace:*",
+    "@iarna/toml": "^2.2.5",
+    "commander": "^12.1.0",
+    "fastify": "^5.0.0",
+    "open": "^10.1.0",
+    "p-queue": "^8.0.1",
+    "parse5": "^7.2.1",
+    "tldts": "^6.1.60",
+    "undici": "^6.21.0",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}

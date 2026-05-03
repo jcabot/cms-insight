@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/api/sse.ts","./src/components/progressbar.tsx","./src/components/reasontext.tsx","./src/components/statusbadge.tsx","./src/components/suggestionline.tsx","./src/routes/analyses.tsx","./src/routes/brokenlinksrun.tsx","./src/routes/overview.tsx","./src/routes/settings.tsx"],"version":"5.9.3"}

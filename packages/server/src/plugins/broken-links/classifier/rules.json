@@ -1,0 +1,45 @@
+{
+  "parking_platforms": [
+    { "name": "sedo", "match": ["sedoparking.com", "img.sedoparking.com", "sedo.com/search/searchresult.php"] },
+    { "name": "afternic", "match": ["afternic.com/forsale", "img.afternic.com"] },
+    { "name": "dan_com", "match": ["dan.com/buy-domain", "dan.com/forsale"] },
+    { "name": "godaddy_parking", "match": ["lpc.godaddy.com", "img.parkingcrew.net/static-content/images/godaddy", "mcc.godaddy.com/park"] },
+    { "name": "bodis", "match": ["bodis.com", "lp.bodis.com"] },
+    { "name": "parkingcrew", "match": ["parkingcrew.net", "img.parkingcrew.net"] },
+    { "name": "uniregistry", "match": ["uniregistrymarket.link"] },
+    { "name": "hugedomains", "match": ["hugedomains.com/domain_profile.cfm"] },
+    { "name": "voodoo", "match": ["voodoo.com/parking"] },
+    { "name": "buydomains", "match": ["buydomains.com/lander"] }
+  ],
+  "soft_404_patterns": [
+    "(?:page|post)?\\s*not\\s*found",
+    "no longer (?:available|exists)",
+    "has been removed",
+    "this page has gone",
+    "404\\s*[-:|]\\s*not found"
+  ],
+  "generic_parking_patterns": [
+    "this domain (?:is for sale|may be for sale)",
+    "buy this domain",
+    "domain parking",
+    "the domain you are looking for is for sale"
+  ],
+  "generic_parking_max_text_bytes": 2048,
+  "topic_buckets": {
+    "gambling": {
+      "keywords": [
+        "casino", "betting", "slots", "poker", "sportsbook", "bonus code",
+        "online casino", "best slots", "free spins", "roulette", "blackjack",
+        "wagering", "odds", "bookmaker"
+      ],
+      "min_density": 0.02
+    },
+    "adult": {
+      "keywords": [
+        "porn", "xxx", "adult video", "nude", "explicit content", "sex chat",
+        "live cam", "escort"
+      ],
+      "min_density": 0.02
+    }
+  }
+}
