@@ -90,6 +90,56 @@ export interface ResultsResponse {
   links: FlatLink[];
 }
 
+/* ─── Missing alt text ──────────────────────────────────────── */
+
+export type DetectionRule = 'D1' | 'D2' | 'D3';
+export type FindingStatus = 'open' | 'fixed';
+
+export interface AltFinding {
+  id: string;
+  src: string;
+  /** Undefined for findings preserved as 'fixed' rows after a successful apply. */
+  rule?: DetectionRule;
+  status: FindingStatus;
+  tag_start: number;
+  tag_end: number;
+  alt_value_start: number;
+  alt_value_end: number;
+  alt_quote: AttrQuote;
+  context_before: string;
+  context_after: string;
+  not_editable?: boolean;
+  /** Last applied alt text. Pre-fills the edit form so users can re-edit. */
+  applied_alt?: string;
+  applied_at?: string;
+}
+
+export interface FlatAltFinding {
+  postType: 'post' | 'page';
+  postSlug: string;
+  postTitle?: string;
+  filePath: string;
+  finding: AltFinding;
+}
+
+export interface MissingAltTextResults {
+  index?: {
+    schema_version: number;
+    last_run_completed: string;
+    posts_scanned: number;
+    totals: { total_images: number; findings_open: number; findings_fixed: number };
+    posts_with_issues: { type: string; slug: string; total_images: number; findings_open: number }[];
+  };
+  findings: FlatAltFinding[];
+}
+
+export interface SetAltEdit {
+  postType: 'post' | 'page';
+  slug: string;
+  findingId: string;
+  altText: string;
+}
+
 export interface SettingsResponse {
   root: string;
   activeSiteId?: string;
@@ -241,5 +291,12 @@ export const api = {
     jsonFetch<{ ok: boolean; site: SiteSummary }>(
       `/api/sites/${encodeURIComponent(id)}/refresh`,
       { method: 'POST' },
+    ),
+  altResults: () =>
+    jsonFetch<MissingAltTextResults>('/api/analyses/missing-alt-text/results'),
+  applySetAlt: (edits: SetAltEdit[]) =>
+    jsonFetch<{ ok: boolean; message?: string; changedFiles?: string[] }>(
+      '/api/analyses/missing-alt-text/apply',
+      { method: 'POST', body: JSON.stringify({ kind: 'set-alt', edits }) },
     ),
 };

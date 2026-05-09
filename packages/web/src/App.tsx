@@ -3,6 +3,7 @@ import { Home } from './routes/Home.js';
 import { Overview } from './routes/Overview.js';
 import { Analyses } from './routes/Analyses.js';
 import { BrokenLinksRun } from './routes/BrokenLinksRun.js';
+import { MissingAltTextRun } from './routes/MissingAltTextRun.js';
 import { Settings } from './routes/Settings.js';
 import { SiteSwitcher } from './components/SiteSwitcher.js';
 
@@ -32,6 +33,7 @@ export function App(): React.ReactElement {
             <Route path="/overview" element={<Overview />} />
             <Route path="/analyses" element={<Analyses />} />
             <Route path="/analyses/broken-links" element={<BrokenLinksRun />} />
+            <Route path="/analyses/missing-alt-text" element={<MissingAltTextRun />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>

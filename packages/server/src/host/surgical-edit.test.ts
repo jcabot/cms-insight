@@ -95,6 +95,119 @@ describe('AC1, AC2: surgical replace preserves all bytes outside href value', ()
   });
 });
 
+describe('insertAttrInOpeningTag', () => {
+  it('inserts alt="..." right after <img into a <img src="...">', async () => {
+    const { insertAttrInOpeningTag } = await import('./surgical-edit.js');
+    const body = `<p>x</p><img src="a.png" class="logo">y`;
+    const tagStart = body.indexOf('<img');
+    const out = insertAttrInOpeningTag({
+      text: body,
+      tagStart,
+      tagName: 'img',
+      attrName: 'alt',
+      attrValue: 'company logo',
+    });
+    expect(out).toBe(`<p>x</p><img alt="company logo" src="a.png" class="logo">y`);
+  });
+
+  it('handles self-closing <img/>', async () => {
+    const { insertAttrInOpeningTag } = await import('./surgical-edit.js');
+    const body = `<img src="a.png"/>`;
+    const out = insertAttrInOpeningTag({
+      text: body,
+      tagStart: 0,
+      tagName: 'img',
+      attrName: 'alt',
+      attrValue: 'x',
+    });
+    expect(out).toBe(`<img alt="x" src="a.png"/>`);
+  });
+
+  it('escapes special chars in the inserted value', async () => {
+    const { insertAttrInOpeningTag } = await import('./surgical-edit.js');
+    const body = `<img src="a.png">`;
+    const out = insertAttrInOpeningTag({
+      text: body,
+      tagStart: 0,
+      tagName: 'img',
+      attrName: 'alt',
+      attrValue: `She said "hi" & waved <hello>`,
+    });
+    expect(out).toBe(
+      `<img alt="She said &quot;hi&quot; &amp; waved &lt;hello&gt;" src="a.png">`,
+    );
+  });
+
+  it('throws when tagStart does not point at <tagName', async () => {
+    const { insertAttrInOpeningTag } = await import('./surgical-edit.js');
+    expect(() =>
+      insertAttrInOpeningTag({
+        text: '<div>x</div>',
+        tagStart: 0,
+        tagName: 'img',
+        attrName: 'alt',
+        attrValue: 'x',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects partial tag-name matches like <image vs <img', async () => {
+    const { insertAttrInOpeningTag } = await import('./surgical-edit.js');
+    // First 4 bytes of '<image' don't equal '<img' so the prefix guard fires.
+    expect(() =>
+      insertAttrInOpeningTag({
+        text: `<image href="x.svg"/>`,
+        tagStart: 0,
+        tagName: 'img',
+        attrName: 'alt',
+        attrValue: 'x',
+      }),
+    ).toThrow(/expected '<img'/);
+    // Synthetic case where the prefix matches but the next byte is a letter.
+    expect(() =>
+      insertAttrInOpeningTag({
+        text: `<imgFOO src="x">`,
+        tagStart: 0,
+        tagName: 'img',
+        attrName: 'alt',
+        attrValue: 'x',
+      }),
+    ).toThrow(/unexpected byte/);
+  });
+});
+
+describe('spliceAttrValue', () => {
+  it('replaces an attribute value byte-precisely', async () => {
+    const { spliceAttrValue } = await import('./surgical-edit.js');
+    const body = `<img alt="" src="a.png">`;
+    const altStart = body.indexOf('alt="') + 5; // just after '"'
+    const altEnd = body.indexOf('"', altStart); // closing quote position
+    const out = spliceAttrValue({
+      text: body,
+      valueStart: altStart,
+      valueEnd: altEnd,
+      quote: '"',
+      newValue: 'company logo',
+    });
+    expect(out).toBe(`<img alt="company logo" src="a.png">`);
+  });
+
+  it('escapes & and " inside the new value', async () => {
+    const { spliceAttrValue } = await import('./surgical-edit.js');
+    const body = `<img alt=" " src="a.png">`;
+    const altStart = body.indexOf('alt="') + 5;
+    const altEnd = body.indexOf('"', altStart);
+    const out = spliceAttrValue({
+      text: body,
+      valueStart: altStart,
+      valueEnd: altEnd,
+      quote: '"',
+      newValue: `A&B "ok"`,
+    });
+    expect(out).toBe(`<img alt="A&amp;B &quot;ok&quot;" src="a.png">`);
+  });
+});
+
 describe('AC3: remove preserves inner HTML byte-identical', () => {
   it('removes <a> wrapper, keeping nested <em>', () => {
     const body = `<p>before</p><a href="https://old.test/x">some <em>fancy</em> text</a><p>after</p>`;

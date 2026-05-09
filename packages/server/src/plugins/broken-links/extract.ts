@@ -1,10 +1,11 @@
-import { parseFragment, defaultTreeAdapter, type DefaultTreeAdapterMap } from 'parse5';
 import type { AttrQuote } from '../../host/surgical-edit.js';
-
-type Element = DefaultTreeAdapterMap['element'];
-type Node = DefaultTreeAdapterMap['node'];
-type Text = DefaultTreeAdapterMap['textNode'];
-type ParentNode = DefaultTreeAdapterMap['parentNode'];
+import {
+  collectText,
+  findAttrValueSpan,
+  getAttr,
+  parseBody,
+  walk,
+} from '../_shared/parse5-utils.js';
 
 export interface ExtractedLink {
   href: string;
@@ -19,77 +20,11 @@ export interface ExtractedLink {
   not_editable?: boolean;
 }
 
-interface HrefSpan {
-  valueStart: number;
-  valueEnd: number;
-  quote: AttrQuote;
-}
-
-function findHrefSpan(
-  body: string,
-  attrLoc: { startOffset: number; endOffset: number },
-): HrefSpan | undefined {
-  const slice = body.slice(attrLoc.startOffset, attrLoc.endOffset);
-  const eq = slice.indexOf('=');
-  if (eq === -1) return undefined;
-  let i = eq + 1;
-  while (i < slice.length && /\s/.test(slice[i] ?? '')) i++;
-  if (i >= slice.length) return undefined;
-  const c = slice[i];
-  if (c === '"' || c === "'") {
-    const valueStart = attrLoc.startOffset + i + 1;
-    const close = slice.indexOf(c, i + 1);
-    if (close === -1) return undefined;
-    const valueEnd = attrLoc.startOffset + close;
-    return { valueStart, valueEnd, quote: c };
-  }
-  return {
-    valueStart: attrLoc.startOffset + i,
-    valueEnd: attrLoc.endOffset,
-    quote: '',
-  };
-}
-
-function isElement(node: Node): node is Element {
-  return 'tagName' in node && Array.isArray((node as Element).childNodes);
-}
-
-function isTextNode(node: Node): node is Text {
-  return (node as Text).nodeName === '#text' && typeof (node as Text).value === 'string';
-}
-
-function getAttr(el: Element, name: string): string | undefined {
-  for (const a of el.attrs) {
-    if (a.name === name) return a.value;
-  }
-  return undefined;
-}
-
-function collectText(node: Node): string {
-  if (isTextNode(node)) return node.value;
-  if ('childNodes' in node) {
-    let out = '';
-    for (const c of (node as ParentNode).childNodes) out += collectText(c);
-    return out;
-  }
-  return '';
-}
-
-function walk(node: Node, visit: (el: Element) => void): void {
-  if (isElement(node)) visit(node);
-  if ('childNodes' in node) {
-    for (const c of (node as ParentNode).childNodes) walk(c, visit);
-  }
-}
-
 export function extractAnchors(body: string): ExtractedLink[] {
-  const fragment = parseFragment(body, {
-    sourceCodeLocationInfo: true,
-    treeAdapter: defaultTreeAdapter,
-  });
+  const fragment = parseBody(body);
   const out: ExtractedLink[] = [];
 
-  walk(fragment as unknown as Node, (el) => {
+  walk(fragment, (el) => {
     if (el.tagName !== 'a') return;
     const href = getAttr(el, 'href');
     if (href === undefined) return;
@@ -131,7 +66,7 @@ export function extractAnchors(body: string): ExtractedLink[] {
       return;
     }
 
-    const span = findHrefSpan(body, attrLoc);
+    const span = findAttrValueSpan(body, attrLoc);
     if (!span) {
       out.push({
         href,

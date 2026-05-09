@@ -41,6 +41,12 @@ export interface CmsInsightConfig {
   strip_tracking_params: string[];
   editor_command: string;
   llm: LlmConfigSection;
+  /**
+   * Per-plugin configuration. The key is the plugin id, the value is the plugin's
+   * own config shape (each plugin casts as needed). Opt-in: omitted by default and
+   * not written to config.toml unless the user adds it.
+   */
+  plugins?: Record<string, unknown>;
 }
 
 export const LLM_DEFAULTS: LlmConfigSection = {

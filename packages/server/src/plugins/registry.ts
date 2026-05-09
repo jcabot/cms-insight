@@ -4,6 +4,7 @@ import type { AnalysisPlugin, ApplyContext, PluginManifest } from '@cms-insight/
 import { FsPluginStorage } from '../host/plugin-storage.js';
 import { createApplyContext } from '../host/apply.js';
 import brokenLinksPlugin from './broken-links/index.js';
+import missingAltTextPlugin from './missing-alt-text/index.js';
 
 export interface RegisteredPlugin {
   plugin: AnalysisPlugin;
@@ -56,6 +57,14 @@ export async function discoverPlugins(opts: RegistryOptions): Promise<Registered
     await registerPlugin(opts.contentDir, brokenLinksPlugin, {
       id: 'broken-links',
       version: brokenLinksPlugin.version,
+      apiVersion: '^1.0',
+    }),
+  );
+
+  out.push(
+    await registerPlugin(opts.contentDir, missingAltTextPlugin, {
+      id: 'missing-alt-text',
+      version: missingAltTextPlugin.version,
       apiVersion: '^1.0',
     }),
   );

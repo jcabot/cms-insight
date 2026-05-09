@@ -37,7 +37,7 @@ const PLUGIN_ID = 'broken-links';
 
 export function BrokenLinksRun(): React.ReactElement {
   const qc = useQueryClient();
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['results', PLUGIN_ID],
     queryFn: () => api.results(PLUGIN_ID),
   });
@@ -129,6 +129,7 @@ export function BrokenLinksRun(): React.ReactElement {
           } else if (ev.kind === 'finished') {
             setProgress((p) => ({ ...p, running: false, finalSummary: ev.summary }));
             qc.invalidateQueries({ queryKey: ['results', PLUGIN_ID] });
+            qc.invalidateQueries({ queryKey: ['sites'] });
           } else if (ev.kind === 'warn') {
             setProgress((p) => ({ ...p, message: `Warning: ${ev.message ?? ''}` }));
           }
@@ -136,6 +137,7 @@ export function BrokenLinksRun(): React.ReactElement {
         onClosed: () => {
           setProgress((p) => ({ ...p, running: false }));
           qc.invalidateQueries({ queryKey: ['results', PLUGIN_ID] });
+          qc.invalidateQueries({ queryKey: ['sites'] });
         },
       });
       sseUnsubRef.current = unsub;
@@ -283,20 +285,19 @@ export function BrokenLinksRun(): React.ReactElement {
           </p>
         </div>
         <div className="actions">
-          <button className="ghost" onClick={() => refetch()}>
-            Refresh
-          </button>
           <button
             disabled={progress.running || startRun.isPending}
             onClick={() => startRun.mutate({ fullRecheck: true, reExtractAll: true })}
+            title="Re-parse every post body AND re-check every link, ignoring all caches"
           >
-            Re-extract
+            Re-extract all
           </button>
           <button
             disabled={progress.running || startRun.isPending}
             onClick={() => startRun.mutate({ fullRecheck: true })}
+            title="Re-check every link regardless of TTL (bodies still parsed only when changed)"
           >
-            Full re-check
+            Full check
           </button>
           <button
             disabled={
@@ -322,8 +323,9 @@ export function BrokenLinksRun(): React.ReactElement {
             className="primary"
             disabled={progress.running || startRun.isPending}
             onClick={() => startRun.mutate({})}
+            title="Re-parse only changed bodies and re-check only links whose TTL is due"
           >
-            Run incremental
+            Check new
           </button>
           {progress.running && <button onClick={() => cancelRun.mutate()}>Cancel</button>}
           {suggestProgress.running && (
@@ -418,7 +420,7 @@ export function BrokenLinksRun(): React.ReactElement {
             <span className="status-line muted">
               {lastRunAt
                 ? `Last completed ${lastRunAt.replace('T', ' ').slice(0, 16)}`
-                : 'No run yet — click Run incremental to populate.'}
+                : 'No run yet — click Check new to populate.'}
             </span>
           )}
           {progress.finalSummary && <span className="summary">— {progress.finalSummary}</span>}
