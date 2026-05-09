@@ -20,10 +20,11 @@ export function Overview(): React.ReactElement {
     <article>
       <header className="page-header">
         <div className="title">
-          <span className="eyebrow">Site overview</span>
+          <span className="eyebrow">Active site overview</span>
           <h1>Content at a glance</h1>
           <p className="muted">
-            Computed from front-matter only — no body parsing, no link checks.
+            Stats for the currently active site. Computed from front-matter only — no body
+            parsing, no link checks.
           </p>
         </div>
       </header>

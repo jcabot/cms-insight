@@ -6,15 +6,18 @@ const STATE_DIR = path.join(os.homedir(), '.cmsinsight');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
 
 export interface AppState {
-  lastContentDir: string;
+  lastRootPath?: string;
+  lastActiveSiteId?: string;
 }
 
 export async function loadState(): Promise<AppState | undefined> {
   try {
     const text = await fs.readFile(STATE_FILE, 'utf8');
     const parsed = JSON.parse(text) as Partial<AppState>;
-    if (typeof parsed.lastContentDir !== 'string') return undefined;
-    return { lastContentDir: parsed.lastContentDir };
+    const out: AppState = {};
+    if (typeof parsed.lastRootPath === 'string') out.lastRootPath = parsed.lastRootPath;
+    if (typeof parsed.lastActiveSiteId === 'string') out.lastActiveSiteId = parsed.lastActiveSiteId;
+    return Object.keys(out).length > 0 ? out : undefined;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     return undefined;

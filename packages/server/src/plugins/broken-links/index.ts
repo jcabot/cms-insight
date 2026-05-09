@@ -2,6 +2,7 @@ import type {
   AnalysisContext,
   AnalysisPlugin,
   ParsedPost,
+  PluginStorage,
   ProgressEvent,
 } from '@cms-insight/plugin-api';
 import { loadRules } from './classifier/rules.js';
@@ -9,6 +10,7 @@ import { createChecker, type CheckerConfig } from './check.js';
 import {
   buildIndex,
   listAllSidecars,
+  loadIndex,
   loadSidecar,
   saveIndex,
   saveSidecar,
@@ -174,7 +176,23 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
     bySidecar.set(d.sidecar, arr);
   }
 
-  await Promise.all(
+  // Producer/consumer queue so per-link progress flows out of the parallel checker
+  // tasks without being blocked behind the final Promise.all. Without this, sites
+  // with hundreds of due links show no progress for minutes.
+  const queue: ProgressEvent[] = [];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  const emit = (ev: ProgressEvent): void => {
+    queue.push(ev);
+    wake?.();
+    wake = undefined;
+  };
+
+  // Cap the number of progress emissions at ~one per percent for huge sites,
+  // and emit at least every link for small ones.
+  const stride = Math.max(1, Math.floor(due.length / 100));
+
+  const work = Promise.all(
     [...bySidecar.entries()].map(async ([sc, links]) => {
       for (const d of links) {
         if (ctx.signal.aborted) return;
@@ -196,6 +214,14 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
         if (result.verdict === 'OK') okCount++;
         else if (result.verdict === 'SUSPICIOUS') suspiciousCount++;
         else brokenCount++;
+        if (doneCount === due.length || doneCount % stride === 0) {
+          emit({
+            kind: 'progress',
+            done: doneCount,
+            total: due.length,
+            message: `Checked ${doneCount}/${due.length} · ok ${okCount}, suspicious ${suspiciousCount}, broken ${brokenCount}`,
+          });
+        }
       }
       try {
         await saveSidecar(ctx.storage, sc);
@@ -203,15 +229,24 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
         console.warn(`saveSidecar failed for ${sc.slug}: ${(err as Error).message}`);
       }
     }),
-  );
+  ).finally(() => {
+    closed = true;
+    wake?.();
+    wake = undefined;
+  });
 
-  // Drain remaining progress events at coarse granularity
-  yield {
-    kind: 'progress',
-    done: doneCount,
-    total: due.length,
-    message: `OK ${okCount}, SUSPICIOUS ${suspiciousCount}, BROKEN ${brokenCount}`,
-  };
+  // Drain progress events as they arrive until all checker tasks have settled.
+  while (!closed || queue.length > 0) {
+    if (queue.length === 0) {
+      await new Promise<void>((r) => {
+        wake = r;
+      });
+      continue;
+    }
+    const ev = queue.shift();
+    if (ev) yield ev;
+  }
+  await work; // surface any errors that escaped Promise.all
 
   await checker.close();
 
@@ -243,6 +278,13 @@ function countSkipped(sidecars: ReadonlyArray<PostSidecar>): number {
   return n;
 }
 
+async function formatHeadline(storage: PluginStorage): Promise<string | undefined> {
+  const idx = await loadIndex(storage);
+  if (!idx) return undefined;
+  const checked = idx.totals.ok + idx.totals.suspicious + idx.totals.broken;
+  return `${idx.totals.broken} broken / ${checked} checked`;
+}
+
 const plugin: AnalysisPlugin = {
   id: manifest.id,
   displayName: manifest.displayName,
@@ -252,6 +294,7 @@ const plugin: AnalysisPlugin = {
   resultsView: 'broken-links',
   run: runPlugin,
   applyAction,
+  formatHeadline,
   auxiliaryActions: {
     'suggest-replacements': {
       id: 'suggest-replacements',

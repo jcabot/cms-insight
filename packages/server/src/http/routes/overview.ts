@@ -19,7 +19,10 @@ export async function registerOverviewRoutes(
     return { contentDir: ctx.contentDir, siteUrl: ctx.siteUrl, ...computeOverview(posts) };
   }
 
-  app.get('/api/overview', async (req) => {
+  app.get('/api/overview', async (req, reply) => {
+    if (!ctx.activeSiteId) {
+      return reply.status(409).send({ error: 'no active site' });
+    }
     const force = (req.query as { fresh?: string } | undefined)?.fresh === '1';
     const now = Date.now();
     if (!force && cached && cached.dir === ctx.contentDir && now - cached.at < TTL_MS) {

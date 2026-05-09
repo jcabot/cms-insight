@@ -10,6 +10,12 @@ export interface AnalysisPlugin {
   run(ctx: AnalysisContext): AsyncIterable<ProgressEvent>;
   applyAction?(ctx: ApplyContext, payload: unknown): Promise<ApplyResult>;
   readonly auxiliaryActions?: Record<string, AuxiliaryAction>;
+  /**
+   * Produce a short headline summary for the home dashboard, e.g. "23 broken / 412 checked".
+   * Reads from `storage` (post-run state on disk). Optional — host falls back to the
+   * `finished` event's `summary` string when omitted.
+   */
+  formatHeadline?(storage: PluginStorage): Promise<string | undefined>;
 }
 
 export interface AuxiliaryAction {

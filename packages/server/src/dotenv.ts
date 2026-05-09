@@ -3,7 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 export interface LoadEnvOptions {
+  /** Per-site content directory. Highest-priority file slot. */
   contentDir?: string;
+  /** Multi-site root directory. Loaded after per-site, before user-home. */
+  root?: string;
 }
 
 export interface LoadEnvResult {
@@ -49,27 +52,26 @@ function applyEnv(parsed: Record<string, string>): void {
   }
 }
 
+async function loadFromDir(dir: string, loadedFrom: string[]): Promise<void> {
+  const p = path.join(dir, '.cmsinsight', '.env');
+  const env = await readEnvFile(p);
+  if (env) {
+    applyEnv(env);
+    loadedFrom.push(p);
+  }
+}
+
 /**
  * Load environment variables from `.env` files. Priority (highest first):
  *   1. process.env (whatever was set before launch — never overwritten)
- *   2. `<contentDir>/.cmsinsight/.env` (per-project)
- *   3. `~/.cmsinsight/.env` (user-wide)
+ *   2. `<contentDir>/.cmsinsight/.env` (per-site)
+ *   3. `<root>/.cmsinsight/.env` (multi-site root, shared across sites)
+ *   4. `~/.cmsinsight/.env` (user-wide)
  */
 export async function loadEnvFiles(opts: LoadEnvOptions): Promise<LoadEnvResult> {
   const loadedFrom: string[] = [];
-  if (opts.contentDir) {
-    const p = path.join(opts.contentDir, '.cmsinsight', '.env');
-    const env = await readEnvFile(p);
-    if (env) {
-      applyEnv(env);
-      loadedFrom.push(p);
-    }
-  }
-  const homeEnvPath = path.join(os.homedir(), '.cmsinsight', '.env');
-  const home = await readEnvFile(homeEnvPath);
-  if (home) {
-    applyEnv(home);
-    loadedFrom.push(homeEnvPath);
-  }
+  if (opts.contentDir) await loadFromDir(opts.contentDir, loadedFrom);
+  if (opts.root) await loadFromDir(opts.root, loadedFrom);
+  await loadFromDir(os.homedir(), loadedFrom);
   return { loadedFrom };
 }

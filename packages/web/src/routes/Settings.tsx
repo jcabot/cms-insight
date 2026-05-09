@@ -1,22 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 
 export function Settings(): React.ReactElement {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ['settings'],
     queryFn: api.settings,
   });
 
-  const [dirInput, setDirInput] = useState('');
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    if (data?.contentDir && dirInput === '') setDirInput(data.contentDir);
-  }, [data?.contentDir, dirInput]);
 
   useEffect(() => {
     if (!toast) return;
@@ -24,47 +17,20 @@ export function Settings(): React.ReactElement {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const switchDir = useMutation({
-    mutationFn: (dir: string) => api.setContentDir(dir),
-    onSuccess: (res) => {
-      if (res.ok) {
-        qc.invalidateQueries();
-        setToast({ kind: 'success', text: `Now reading from ${res.contentDir ?? 'new directory'}` });
-      } else {
-        setToast({ kind: 'error', text: res.message ?? 'failed to switch directory' });
-      }
+  const refresh = useMutation({
+    mutationFn: () => api.settings(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+      setToast({ kind: 'success', text: 'Settings reloaded.' });
     },
-    onError: (err) => {
-      setToast({ kind: 'error', text: (err as Error).message });
-    },
-  });
-
-  const switchAndRun = useMutation({
-    mutationFn: async (dir: string) => {
-      const res = await api.setContentDir(dir);
-      if (!res.ok) throw new Error(res.message ?? 'failed to switch directory');
-      await api.startRun('broken-links', {});
-      return res;
-    },
-    onSuccess: (res) => {
-      qc.invalidateQueries();
-      setToast({
-        kind: 'success',
-        text: `Switched to ${res.contentDir ?? 'new directory'}; broken-links analysis started.`,
-      });
-      navigate('/analyses/broken-links');
-    },
-    onError: (err) => {
-      setToast({ kind: 'error', text: (err as Error).message });
-    },
+    onError: (err) => setToast({ kind: 'error', text: (err as Error).message }),
   });
 
   if (isLoading) return <p className="loading">Loading settings…</p>;
   if (error) return <p className="error-line">{(error as Error).message}</p>;
   if (!data) return <></>;
 
-  const dirty = dirInput.trim() !== data.contentDir;
-  const busy = switchDir.isPending || switchAndRun.isPending;
+  const noActive = !data.activeSiteId;
 
   return (
     <article>
@@ -73,38 +39,36 @@ export function Settings(): React.ReactElement {
           <span className="eyebrow">Settings</span>
           <h1>Workspace &amp; configuration</h1>
           <p className="muted">
-            Point the dashboard at any wpsync content directory and re-run the analysis.
+            Read-only view of the active site's environment. To switch which site is active, go
+            back to <strong>Home</strong>.
           </p>
+        </div>
+        <div className="actions">
+          <button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+            Reload
+          </button>
         </div>
       </header>
 
+      {noActive && (
+        <p className="error-line">
+          No active site. Pick one on the Home page before editing per-site settings.
+        </p>
+      )}
+
       <section className="settings-section">
         <div className="section-head">
-          <h2>Working directory</h2>
+          <h2>Active site</h2>
           <p>
-            The folder the dashboard reads from. Must contain <code className="mono">.wpsync/config.toml</code>{' '}
-            with a <code className="mono">site_url</code> key, plus <code className="mono">posts/</code> and{' '}
-            <code className="mono">pages/</code> subfolders.
+            Multi-site root: <code className="mono">{data.root}</code>
           </p>
         </div>
-
-        <div className="dir-row">
-          <div className="field">
-            <label className="field-label" htmlFor="dirInput">
-              Path
-            </label>
-            <input
-              id="dirInput"
-              className="mono"
-              type="text"
-              value={dirInput}
-              spellCheck={false}
-              autoComplete="off"
-              onChange={(e) => setDirInput(e.target.value)}
-              placeholder="/path/to/wpsync/content"
-            />
+        <div className="dir-row" style={{ gridTemplateColumns: '1fr' }}>
+          {noActive ? (
+            <span className="field-help">No site is active.</span>
+          ) : (
             <span className="field-help">
-              Currently reading: <code className="mono">{data.contentDir}</code>
+              Active: <code className="mono">{data.contentDir}</code>
               {data.siteUrl && (
                 <>
                   {' '}
@@ -112,22 +76,7 @@ export function Settings(): React.ReactElement {
                 </>
               )}
             </span>
-          </div>
-          <div className="row gap-sm" style={{ alignItems: 'flex-end' }}>
-            <button
-              disabled={!dirty || busy}
-              onClick={() => switchDir.mutate(dirInput.trim())}
-            >
-              Switch
-            </button>
-            <button
-              className="primary"
-              disabled={busy || dirInput.trim().length === 0}
-              onClick={() => switchAndRun.mutate(dirInput.trim())}
-            >
-              Switch &amp; analyze
-            </button>
-          </div>
+          )}
         </div>
       </section>
 
@@ -166,38 +115,42 @@ export function Settings(): React.ReactElement {
             </div>
           )}
           <p className="field-help" style={{ marginTop: 8 }}>
-            To enable Anthropic Claude suggestions, provide an <code className="mono">ANTHROPIC_API_KEY</code>{' '}
-            in any of these places (highest priority first), then restart the server:
+            To enable Anthropic Claude suggestions, provide an{' '}
+            <code className="mono">ANTHROPIC_API_KEY</code> in any of these places (highest
+            priority first), then restart the server:
           </p>
           <ol className="field-help" style={{ marginTop: 6, paddingLeft: 24 }}>
             <li>
               Shell environment:{' '}
               <code className="mono">export ANTHROPIC_API_KEY=sk-ant-...</code>
             </li>
+            {!noActive && (
+              <li>
+                Per-site file:{' '}
+                <code className="mono">{data.contentDir.replace(/\\/g, '/')}/.cmsinsight/.env</code>
+              </li>
+            )}
             <li>
-              Per-project file:{' '}
-              <code className="mono">{data.contentDir.replace(/\\/g, '/')}/.cmsinsight/.env</code>
+              Root-shared file:{' '}
+              <code className="mono">{data.root.replace(/\\/g, '/')}/.cmsinsight/.env</code>
             </li>
             <li>
-              User-wide file:{' '}
-              <code className="mono">~/.cmsinsight/.env</code>
+              User-wide file: <code className="mono">~/.cmsinsight/.env</code>
             </li>
           </ol>
-          <p className="field-help" style={{ marginTop: 6 }}>
-            Both <code className="mono">.env</code> paths are inside <code className="mono">.cmsinsight/</code>{' '}
-            directories that the dashboard already keeps out of git. Format is one{' '}
-            <code className="mono">KEY=value</code> per line.
-          </p>
         </div>
       </section>
 
       <section className="settings-section">
         <div className="section-head">
           <h2>Configuration</h2>
-          <p>
-            Edit <code className="mono">.cmsinsight/config.toml</code> in the working directory and
-            restart to change ports, concurrency, TTLs, or tracking-param strip lists.
-          </p>
+          {!noActive && (
+            <p>
+              Edit <code className="mono">.cmsinsight/config.toml</code> in the active site's
+              directory and restart to change ports, concurrency, TTLs, or tracking-param strip
+              lists.
+            </p>
+          )}
         </div>
         <pre className="config-block">{JSON.stringify(data.config, null, 2)}</pre>
       </section>

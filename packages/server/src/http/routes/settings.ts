@@ -8,6 +8,8 @@ export async function registerSettingsRoutes(
   ctx: AppContext,
 ): Promise<void> {
   app.get('/api/settings', async () => ({
+    root: ctx.root,
+    activeSiteId: ctx.activeSiteId,
     contentDir: ctx.contentDir,
     siteUrl: ctx.siteUrl,
     config: ctx.config,
@@ -17,29 +19,13 @@ export async function registerSettingsRoutes(
 
   app.put(
     '/api/settings',
-    async (req: FastifyRequest<{ Body: Partial<CmsInsightConfig> }>) => {
+    async (req: FastifyRequest<{ Body: Partial<CmsInsightConfig> }>, reply: FastifyReply) => {
+      if (!ctx.activeSiteId) {
+        return reply.status(409).send({ ok: false, message: 'no active site' });
+      }
       const updated = await writeConfig(ctx.contentDir, req.body ?? {});
-      Object.assign(ctx.config, updated);
+      ctx.refreshConfig(updated);
       return { ok: true, config: updated };
-    },
-  );
-
-  app.post(
-    '/api/settings/content-dir',
-    async (
-      req: FastifyRequest<{ Body: { contentDir?: string } }>,
-      reply: FastifyReply,
-    ) => {
-      const newDir = req.body?.contentDir;
-      if (typeof newDir !== 'string' || newDir.trim().length === 0) {
-        return reply.status(400).send({ ok: false, message: 'contentDir is required' });
-      }
-      try {
-        await ctx.reload(newDir);
-        return { ok: true, contentDir: ctx.contentDir, siteUrl: ctx.siteUrl };
-      } catch (err) {
-        return reply.status(400).send({ ok: false, message: (err as Error).message });
-      }
     },
   );
 }

@@ -1,8 +1,10 @@
 import type {
   AnalysisContext,
+  AnalysisPlugin,
   AuxiliaryAction,
   LlmProvider,
   ParsedPost,
+  PluginStorage,
   ProgressEvent,
 } from '@cms-insight/plugin-api';
 import type { CmsInsightConfig } from '../config/defaults.js';
@@ -55,6 +57,17 @@ export interface CreatePluginRunnerOptions {
   siteUrl: string;
   config: CmsInsightConfig;
   llm?: LlmProvider;
+  /** Called whenever a job (run or auxiliary action) reaches a terminal status. */
+  onJobFinished?: (info: {
+    pluginId: string;
+    actionName: string;
+    status: RunStatus;
+    finishedAt: string;
+    /** The summary string from the plugin's `finished` event, if any. */
+    summary?: string;
+    plugin: AnalysisPlugin;
+    storage: PluginStorage;
+  }) => void;
 }
 
 export interface AuxiliaryActionInfo {
@@ -146,7 +159,7 @@ export async function createPluginRunner(
     jobs.set(key, internal);
 
     const ctx = buildContext(reg, ac.signal, options);
-    void execute(runner, ctx, internal);
+    void execute(runner, ctx, internal, reg.plugin, reg.storage, opts.onJobFinished);
     return state;
   }
 
@@ -233,6 +246,9 @@ async function execute(
   runner: (ctx: AnalysisContext) => AsyncIterable<ProgressEvent>,
   ctx: AnalysisContext,
   internal: InternalRun,
+  plugin: AnalysisPlugin,
+  storage: PluginStorage,
+  onJobFinished: CreatePluginRunnerOptions['onJobFinished'],
 ): Promise<void> {
   const GRACE_MS = 5000;
   let graceTimer: NodeJS.Timeout | undefined;
@@ -243,9 +259,11 @@ async function execute(
   };
   internal.controller.signal.addEventListener('abort', onAbort);
 
+  let lastFinishedSummary: string | undefined;
   try {
     for await (const ev of runner(ctx)) {
       pushEvent(internal.state, ev);
+      if (ev.kind === 'finished') lastFinishedSummary = ev.summary;
       for (const sub of internal.subscribers) sub(ev);
       if (internal.controller.signal.aborted) {
         internal.state.status = 'cancelled';
@@ -265,10 +283,27 @@ async function execute(
   } finally {
     if (graceTimer) clearTimeout(graceTimer);
     internal.controller.signal.removeEventListener('abort', onAbort);
-    internal.state.finishedAt = new Date().toISOString();
+    const finishedAt = new Date().toISOString();
+    internal.state.finishedAt = finishedAt;
     for (const sub of internal.subscribers) {
       sub({ kind: 'closed', status: internal.state.status });
     }
     internal.subscribers.clear();
+    if (onJobFinished) {
+      try {
+        onJobFinished({
+          pluginId: internal.state.pluginId,
+          actionName: internal.state.actionName,
+          status: internal.state.status,
+          finishedAt,
+          summary: lastFinishedSummary,
+          plugin,
+          storage,
+        });
+      } catch (err) {
+        // Don't let registry callback errors propagate into the runner.
+        console.warn(`[cms-insight] onJobFinished failed: ${(err as Error).message}`);
+      }
+    }
   }
 }

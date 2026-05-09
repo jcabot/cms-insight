@@ -91,11 +91,38 @@ export interface ResultsResponse {
 }
 
 export interface SettingsResponse {
+  root: string;
+  activeSiteId?: string;
   contentDir: string;
   siteUrl: string;
   config: Record<string, unknown>;
   llmEnabled: boolean;
   llmDisabledReason?: string;
+}
+
+export interface LastAnalysis {
+  finishedAt: string;
+  headline: string;
+}
+
+export interface SiteSummary {
+  id: string;
+  label: string;
+  relPath: string;
+  addedAt: string;
+  postCount?: number;
+  lastAnalyses: Record<string, LastAnalysis>;
+  isActive: boolean;
+}
+
+export interface SitesResponse {
+  root: string;
+  activeSiteId?: string;
+  sites: SiteSummary[];
+}
+
+export interface SiteCandidate {
+  relPath: string;
 }
 
 export interface ActionInfo {
@@ -114,10 +141,13 @@ export interface ActionInfo {
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-  });
+  const headers: Record<string, string> = { ...((init?.headers as Record<string, string>) ?? {}) };
+  // Only declare a JSON content-type when we're actually sending a body —
+  // Fastify rejects empty bodies that claim to be JSON.
+  if (init?.body !== undefined && init?.body !== null && headers['content-type'] === undefined) {
+    headers['content-type'] = 'application/json';
+  }
+  const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
     try {
@@ -179,9 +209,37 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  setContentDir: (contentDir: string) =>
-    jsonFetch<{ ok: boolean; contentDir?: string; siteUrl?: string; message?: string }>(
-      '/api/settings/content-dir',
-      { method: 'POST', body: JSON.stringify({ contentDir }) },
+  listSites: () => jsonFetch<SitesResponse>('/api/sites'),
+  listSiteCandidates: () =>
+    jsonFetch<{ candidates: SiteCandidate[] }>('/api/sites/candidates'),
+  addSite: (body: { relPath: string; label?: string }) =>
+    jsonFetch<{ ok: boolean; site: SiteSummary }>('/api/sites', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  removeSite: (id: string) =>
+    jsonFetch<{ ok: boolean; activeSiteId?: string; sites: SiteSummary[] }>(
+      `/api/sites/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    ),
+  renameSite: (id: string, label: string) =>
+    jsonFetch<{ ok: boolean; site: SiteSummary }>(
+      `/api/sites/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify({ label }) },
+    ),
+  reorderSites: (ids: string[]) =>
+    jsonFetch<{ ok: boolean; sites: SiteSummary[] }>('/api/sites/order', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
+  activateSite: (id: string) =>
+    jsonFetch<{ ok: boolean; activeSiteId: string; contentDir: string; siteUrl: string }>(
+      `/api/sites/${encodeURIComponent(id)}/activate`,
+      { method: 'POST' },
+    ),
+  refreshSite: (id: string) =>
+    jsonFetch<{ ok: boolean; site: SiteSummary }>(
+      `/api/sites/${encodeURIComponent(id)}/refresh`,
+      { method: 'POST' },
     ),
 };

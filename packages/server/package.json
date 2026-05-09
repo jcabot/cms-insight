@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@cms-insight/plugin-api": "workspace:*",
+    "@fastify/static": "^9.1.3",
     "@iarna/toml": "^2.2.5",
     "commander": "^12.1.0",
     "fastify": "^5.0.0",
