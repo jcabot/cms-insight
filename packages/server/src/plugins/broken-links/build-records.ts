@@ -1,5 +1,5 @@
 import { extractAnchors, type ExtractedLink } from './extract.js';
-import { isExternal, isSkippable, normalizeUrl } from './url.js';
+import { normalizeUrl, resolveCheckHref } from './url.js';
 import type { LinkRecord } from './sidecar.js';
 
 export interface BuildOptions {
@@ -44,8 +44,7 @@ export function buildLinkRecords(opts: BuildOptions): LinkRecord[] {
   const anchors = extractAnchors(opts.body);
   const out: LinkRecord[] = [];
   for (const a of anchors) {
-    if (isSkippable(a.href)) continue;
-    if (!isExternal(a.href, opts.siteUrl)) continue;
+    if (!resolveCheckHref(a.href, opts.siteUrl)) continue;
     out.push(toRecord(a, opts.postId, opts.bodyHash, opts.stripParams, opts.previousByHref));
   }
   return out;

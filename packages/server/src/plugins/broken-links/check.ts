@@ -22,6 +22,7 @@ export interface CheckerConfig {
   body_cap_bytes?: number;
   user_agent: string;
   retry_attempts?: number;
+  treat_403_as_broken?: boolean;
 }
 
 export interface Checker {
@@ -269,6 +270,16 @@ export function createChecker(config: CheckerConfig, rules: ClassifierRules): Ch
       hostQueue.run(host, async () => {
         try {
           const r = await withRetries(href, signal);
+          if (r.status === 403 && !config.treat_403_as_broken) {
+            return {
+              http_status: r.status,
+              final_url: r.finalUrl,
+              verdict: 'OK',
+              reason_code: 'http_403_protected',
+              reason_detail: 'Treated as OK per treat_403_as_broken=false (auth-protected, not actually broken).',
+              cross_domain_redirect: r.crossDomainRedirect,
+            };
+          }
           if (r.status >= 400) {
             return {
               http_status: r.status,

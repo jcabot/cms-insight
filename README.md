@@ -67,13 +67,13 @@ Removing a site from the Home dashboard only removes its registry entry — its 
 
 ### broken-links
 
-Scans every post body for external `<a>` tags, checks them with a polite (per-host rate-limited) HEAD/GET fan-out, and groups results into `OK` / `SUSPICIOUS` / `BROKEN`. Per-link checks are cached with verdict-specific TTLs (`ttl_ok_days`, `ttl_suspicious_days`, `ttl_broken_days` in `config.toml`); re-runs only re-check links that are due. Apply actions: **replace URL** or **remove `<a>` wrapper preserving inner text**, both via byte-level surgical edit with stale-hash protection.
+Scans every post body for internal and external `<a>` tags, checks them with a polite (per-host rate-limited) HEAD/GET fan-out, and groups results into `OK` / `SUSPICIOUS` / `BROKEN`. Per-link checks are cached with verdict-specific TTLs (`ttl_ok_days`, `ttl_suspicious_days`, `ttl_broken_days` in `config.toml`); re-runs only re-check links that are due. Apply actions: **replace URL** or **remove `<a>` wrapper preserving inner text**, both via byte-level surgical edit with stale-hash protection.
 
 The progress bar updates in near-real-time during link checks (per-link events flow through a producer/consumer queue, throttled to ~1 event per 1% on very large sites).
 
 ### missing-alt-text
 
-Scans every post body for `<img>` tags whose `alt` attribute is missing (`D1`), whitespace-only (`D2`), or the empty string (`D3` — flagged by default; opt out per-site via `[plugins.missing-alt-text] flagEmptyAlt = false` in `config.toml`). Each finding shows the image as a clickable thumbnail (lazy-loaded directly from the source URL — cms-insight never proxies image bytes). Apply action: type an alt string, click **Add alt text**; the host inserts or replaces `alt="…"` byte-precisely, preserving every other attribute, and asserts the single-`alt` invariant before writing.
+Scans every post body for `<img>` tags whose `alt` attribute is missing (`D1`), whitespace-only (`D2`), or the empty string (`D3` — flagged by default; opt out per-site via `[plugins.missing-alt-text] flagEmptyAlt = false` in `config.toml`). This only covers images explicitly present in the stored post/page text; it does not inspect images added later by the rendering engine, such as galleries, featured images, theme templates, shortcodes, or blocks expanded at render time. Each finding shows the image as a clickable thumbnail (lazy-loaded directly from the source URL — cms-insight never proxies image bytes). Apply action: type an alt string, click **Add alt text**; the host inserts or replaces `alt="…"` byte-precisely, preserving every other attribute, and asserts the single-`alt` invariant before writing.
 
 Re-runs are gated purely by body hash (no TTL — alt findings are a function of the body alone).
 

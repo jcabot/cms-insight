@@ -81,6 +81,25 @@ export async function loadConfig(contentDir: string): Promise<LoadedConfig> {
   return { contentDir: absDir, siteUrl, config: merged };
 }
 
+function mergePlugins(
+  ...sources: ReadonlyArray<Record<string, unknown> | undefined>
+): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  let any = false;
+  for (const src of sources) {
+    if (!src) continue;
+    any = true;
+    for (const [k, v] of Object.entries(src)) {
+      const prev = out[k];
+      out[k] =
+        prev && typeof prev === 'object' && v && typeof v === 'object'
+          ? { ...(prev as Record<string, unknown>), ...(v as Record<string, unknown>) }
+          : v;
+    }
+  }
+  return any ? out : undefined;
+}
+
 export async function writeConfig(
   contentDir: string,
   patch: Partial<CmsInsightConfig>,
@@ -93,7 +112,9 @@ export async function writeConfig(
     ...existing,
     ...patch,
     llm: { ...LLM_DEFAULTS, ...(existing.llm ?? {}), ...(patch.llm ?? {}) },
+    plugins: mergePlugins(existing.plugins, patch.plugins),
   };
+  if (merged.plugins === undefined) delete (merged as { plugins?: unknown }).plugins;
   const out = TOML.stringify(merged as unknown as TOML.JsonMap);
   await fs.writeFile(cmsiCfgPath, out, 'utf8');
   return merged;

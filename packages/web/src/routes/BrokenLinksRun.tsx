@@ -14,6 +14,9 @@ import { SuggestionLine } from '../components/SuggestionLine.js';
 import { subscribeSse } from '../api/sse.js';
 
 type FilterStatus = 'ALL' | 'BROKEN' | 'SUSPICIOUS' | 'OK' | 'UNREVIEWED';
+type SortKey = 'status' | 'post' | 'link' | 'reason';
+type SortDir = 'asc' | 'desc';
+const VERDICT_RANK: Record<string, number> = { OK: 1, SUSPICIOUS: 2, BROKEN: 3 };
 
 interface DraftEdit {
   action: ActionType;
@@ -49,6 +52,7 @@ export function BrokenLinksRun(): React.ReactElement {
   const siteUrl = settings?.siteUrl;
 
   const [filter, setFilter] = useState<FilterStatus>('ALL');
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
   const [search, setSearch] = useState('');
   const [drafts, setDrafts] = useState<Record<string, DraftEdit>>({});
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -220,6 +224,19 @@ export function BrokenLinksRun(): React.ReactElement {
     },
   });
 
+  // Keep doesn't touch the file — committing immediately matches the user's intent
+  // ("clicking Keep is my way of saying I've reviewed this") and avoids the Apply-all step.
+  const keepLink = useMutation({
+    mutationFn: (target: { postType: 'post' | 'page'; slug: string; linkId: string }) =>
+      api.applyEdits(PLUGIN_ID, [{ ...target, action: 'keep' }]),
+    onSuccess: (_, target) => {
+      const key = encodeKey(target.postType, target.slug, target.linkId);
+      setDraftForKey(key, undefined);
+      setExpanded((prev) => (prev === key ? null : prev));
+      qc.invalidateQueries({ queryKey: ['results', PLUGIN_ID] });
+    },
+  });
+
   useEffect(
     () => () => {
       sseUnsubRef.current?.();
@@ -265,6 +282,36 @@ export function BrokenLinksRun(): React.ReactElement {
       return true;
     });
   }, [allLinks, filter, search]);
+
+  const sortedRows = useMemo<FlatLink[]>(() => {
+    if (!sort) return filtered;
+    const m = sort.dir === 'asc' ? 1 : -1;
+    return filtered.slice().sort((a, b) => {
+      switch (sort.key) {
+        case 'status': {
+          const aR = VERDICT_RANK[a.link.last_check?.verdict ?? ''] ?? 0;
+          const bR = VERDICT_RANK[b.link.last_check?.verdict ?? ''] ?? 0;
+          return (aR - bR) * m;
+        }
+        case 'post':
+          return `${a.postType}/${a.postSlug}`.localeCompare(`${b.postType}/${b.postSlug}`) * m;
+        case 'link':
+          return a.link.href.localeCompare(b.link.href) * m;
+        case 'reason': {
+          const aC = a.link.last_check?.reason_code ?? '';
+          const bC = b.link.last_check?.reason_code ?? '';
+          return aC.localeCompare(bC) * m;
+        }
+      }
+    });
+  }, [filtered, sort]);
+
+  const cycleSort = useCallback((key: SortKey): void => {
+    setSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+    });
+  }, []);
 
   if (isLoading) return <p className="loading">Loading results…</p>;
   if (error) return <p className="error-line">{(error as Error).message}</p>;
@@ -472,7 +519,7 @@ export function BrokenLinksRun(): React.ReactElement {
         </div>
       )}
 
-      {filtered.length === 0 ? (
+      {sortedRows.length === 0 ? (
         <div className="empty">
           <div className="icon">∅</div>
           <h3>No links match</h3>
@@ -483,15 +530,15 @@ export function BrokenLinksRun(): React.ReactElement {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="col-status">Status</th>
-                <th className="col-post">Post</th>
-                <th>Link</th>
-                <th>Reason</th>
+                <SortHeader className="col-status" label="Status" sortKey="status" sort={sort} onSort={cycleSort} />
+                <SortHeader className="col-post" label="Post" sortKey="post" sort={sort} onSort={cycleSort} />
+                <SortHeader label="Link" sortKey="link" sort={sort} onSort={cycleSort} />
+                <SortHeader label="Reason" sortKey="reason" sort={sort} onSort={cycleSort} />
                 <th className="col-action">Action</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => {
+              {sortedRows.map((row) => {
                 const k = encodeKey(row.postType, row.postSlug, row.link.id);
                 const isExpanded = expanded === k;
                 const draft = drafts[k];
@@ -506,6 +553,7 @@ export function BrokenLinksRun(): React.ReactElement {
                     onToggle={onToggleRow}
                     onChange={setDraftForKey}
                     onCleanSuggestion={(target) => cleanSuggestion.mutate(target)}
+                    onKeep={(target) => keepLink.mutate(target)}
                   />
                 );
               })}
@@ -514,6 +562,34 @@ export function BrokenLinksRun(): React.ReactElement {
         </div>
       )}
     </article>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: SortDir } | null;
+  onSort: (key: SortKey) => void;
+  className?: string;
+}): React.ReactElement {
+  const active = sort?.key === sortKey;
+  const arrow = active ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
+  return (
+    <th
+      className={className}
+      onClick={() => onSort(sortKey)}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      {label}
+      {arrow}
+    </th>
   );
 }
 
@@ -535,6 +611,7 @@ interface RowProps {
   onToggle: (rowKey: string) => void;
   onChange: (key: string, d: DraftEdit | undefined) => void;
   onCleanSuggestion: (target: { postType: 'post' | 'page'; slug: string; linkId: string }) => void;
+  onKeep: (target: { postType: 'post' | 'page'; slug: string; linkId: string }) => void;
 }
 
 const Row = memo(function Row({
@@ -546,6 +623,7 @@ const Row = memo(function Row({
   onToggle,
   onChange,
   onCleanSuggestion,
+  onKeep,
 }: RowProps): React.ReactElement {
   const verdict: Verdict | undefined = row.link.last_check?.verdict;
   const reasonCode = row.link.last_check?.reason_code ?? '';
@@ -699,7 +777,13 @@ const Row = memo(function Row({
                         type="radio"
                         name={`act-${row.link.id}`}
                         checked={draft?.action === 'keep'}
-                        onChange={() => set({ action: 'keep' })}
+                        onChange={() =>
+                          onKeep({
+                            postType: row.postType,
+                            slug: row.postSlug,
+                            linkId: row.link.id,
+                          })
+                        }
                       />
                       Keep
                     </label>

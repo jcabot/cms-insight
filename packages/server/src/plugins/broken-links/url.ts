@@ -1,17 +1,17 @@
 import { getDomain } from 'tldts';
 
-export function isSkippable(href: string): boolean {
-  if (!href) return true;
+export function resolveCheckHref(href: string, siteUrl: string): string | undefined {
+  if (!href) return undefined;
   const trimmed = href.trim();
-  if (trimmed.length === 0) return true;
-  const lower = trimmed.toLowerCase();
-  if (lower.startsWith('mailto:')) return true;
-  if (lower.startsWith('tel:')) return true;
-  if (lower.startsWith('javascript:')) return true;
-  if (lower.startsWith('#')) return true;
-  if (lower.startsWith('//')) return false;
-  if (!/^[a-z][a-z0-9+\-.]*:/.test(lower)) return true;
-  return !/^https?:/.test(lower);
+  // Empty and fragment-only hrefs would otherwise resolve to the site root against siteUrl.
+  if (trimmed.length === 0 || trimmed.startsWith('#')) return undefined;
+  try {
+    const u = new URL(trimmed, siteUrl);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined;
+    return u.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export function isExternal(href: string, siteUrl: string): boolean {

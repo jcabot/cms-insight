@@ -54,11 +54,13 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
   };
 
   const totalImagesByPost = new Map<string, number>();
+  const presentKeys = new Set<string>();
 
   for (let i = 0; i < allPosts.length; i++) {
     if (ctx.signal.aborted) break;
     const p = allPosts[i];
     if (!p) continue;
+    presentKeys.add(sidecarKey(p.type, p.slug));
 
     const existing = await loadSidecar(ctx.storage, p.type, p.slug);
     const needsExtract = reExtractAll || !existing || existing.body_hash !== p.bodyHash;
@@ -119,6 +121,8 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
     return;
   }
 
+  await pruneOrphanSidecars(ctx.storage, presentKeys);
+
   const allSc: PostSidecar[] = [];
   for await (const sc of listAllSidecars(ctx.storage)) {
     allSc.push(sc);
@@ -130,6 +134,17 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
     kind: 'finished',
     summary: `Scanned ${total} post(s); ${idx.totals.findings_open} missing alt / ${idx.totals.total_images} images`,
   };
+}
+
+async function pruneOrphanSidecars(
+  storage: PluginStorage,
+  presentKeys: ReadonlySet<string>,
+): Promise<void> {
+  for await (const key of storage.list()) {
+    if (key === 'index.json' || !key.endsWith('.json')) continue;
+    if (!key.startsWith('posts/') && !key.startsWith('pages/')) continue;
+    if (!presentKeys.has(key)) await storage.delete(key);
+  }
 }
 
 async function formatHeadline(storage: PluginStorage): Promise<string | undefined> {

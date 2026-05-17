@@ -14,11 +14,13 @@ import {
   loadSidecar,
   saveIndex,
   saveSidecar,
+  sidecarKey,
   SCHEMA_VERSION,
   type LinkRecord,
   type PostSidecar,
 } from './sidecar.js';
 import { buildLinkRecords } from './build-records.js';
+import { resolveCheckHref } from './url.js';
 import { applyAction } from './apply.js';
 import { suggestReplacements } from './suggest/index.js';
 import manifest from './manifest.json' with { type: 'json' };
@@ -33,6 +35,7 @@ interface RunConfig {
   ttl_suspicious_days: number;
   ttl_broken_days: number;
   strip_tracking_params: string[];
+  plugins?: { 'broken-links'?: { treat_403_as_broken?: boolean } };
   runOptions?: { fullRecheck?: boolean; reExtractAll?: boolean };
 }
 
@@ -89,11 +92,13 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
   };
 
   const sidecars: PostSidecar[] = [];
+  const presentKeys = new Set<string>();
 
   for (let i = 0; i < allPosts.length; i++) {
     if (ctx.signal.aborted) break;
     const p = allPosts[i];
     if (!p) continue;
+    presentKeys.add(sidecarKey(p.type, p.slug));
 
     let sc = await loadSidecar(ctx.storage, p.type, p.slug);
     const needsExtract = reExtractAll || !sc || sc.body_hash !== p.bodyHash;
@@ -109,6 +114,11 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
         stripParams: cfg.strip_tracking_params,
         previousByHref,
       });
+      // Re-extract = explicit "blow away caches" — drop applied-action history so the
+      // UI doesn't show stale badges on links that are now re-checked from scratch.
+      if (reExtractAll) {
+        for (const l of fresh) l.action = null;
+      }
       sc = {
         schema_version: SCHEMA_VERSION,
         post_id: p.id,
@@ -142,6 +152,7 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
     concurrency_per_host: cfg.concurrency_per_host,
     per_host_min_delay_ms: cfg.per_host_min_delay_ms,
     user_agent: `cms-insight/${VERSION} (+${ctx.siteUrl})`,
+    treat_403_as_broken: cfg.plugins?.['broken-links']?.treat_403_as_broken ?? false,
   };
   const checker = createChecker(checkerConfig, rules);
 
@@ -196,8 +207,10 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
     [...bySidecar.entries()].map(async ([sc, links]) => {
       for (const d of links) {
         if (ctx.signal.aborted) return;
+        const hrefForCheck = resolveCheckHref(d.link.href, ctx.siteUrl);
+        if (!hrefForCheck) continue;
         const result = await checker.check({
-          href: d.link.href,
+          href: hrefForCheck,
           anchorText: d.link.anchor_text,
           signal: ctx.signal,
         });
@@ -250,7 +263,8 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
 
   await checker.close();
 
-  // Rebuild index from all sidecars on disk
+  await pruneOrphanSidecars(ctx.storage, presentKeys);
+
   const allSc: PostSidecar[] = [];
   for await (const sc of listAllSidecars(ctx.storage)) {
     allSc.push(sc);
@@ -268,6 +282,17 @@ function indexByHref(links: ReadonlyArray<LinkRecord>): Map<string, LinkRecord> 
   const out = new Map<string, LinkRecord>();
   for (const l of links) if (!out.has(l.href)) out.set(l.href, l);
   return out;
+}
+
+async function pruneOrphanSidecars(
+  storage: PluginStorage,
+  presentKeys: ReadonlySet<string>,
+): Promise<void> {
+  for await (const key of storage.list()) {
+    if (key === 'index.json' || !key.endsWith('.json')) continue;
+    if (!key.startsWith('posts/') && !key.startsWith('pages/')) continue;
+    if (!presentKeys.has(key)) await storage.delete(key);
+  }
 }
 
 function countSkipped(sidecars: ReadonlyArray<PostSidecar>): number {

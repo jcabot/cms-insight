@@ -1,4 +1,4 @@
-export const SUGGEST_SYSTEM_PROMPT = `You are an expert content librarian helping repair broken external links on a third-party content website. For each broken link below, suggest the most likely current URL it should now point to.
+export const SUGGEST_SYSTEM_PROMPT = `You are an expert content librarian helping repair broken links on a third-party content website. For each broken link below, suggest the most likely current URL it should now point to.
 
 Use these heuristics:
 - If the original URL points to a well-known site (Wikipedia, GitHub, IANA, MDN, a major newspaper, etc.), use your training knowledge to find the new canonical URL.

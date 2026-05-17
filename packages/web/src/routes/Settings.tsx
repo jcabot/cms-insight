@@ -26,6 +26,16 @@ export function Settings(): React.ReactElement {
     onError: (err) => setToast({ kind: 'error', text: (err as Error).message }),
   });
 
+  const saveBrokenLinks = useMutation({
+    mutationFn: (next: { treat_403_as_broken: boolean }) =>
+      api.putSettings({ plugins: { 'broken-links': next } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+      setToast({ kind: 'success', text: 'Broken-links settings saved.' });
+    },
+    onError: (err) => setToast({ kind: 'error', text: (err as Error).message }),
+  });
+
   if (isLoading) return <p className="loading">Loading settings…</p>;
   if (error) return <p className="error-line">{(error as Error).message}</p>;
   if (!data) return <></>;
@@ -138,6 +148,36 @@ export function Settings(): React.ReactElement {
               User-wide file: <code className="mono">~/.cmsinsight/.env</code>
             </li>
           </ol>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <div className="section-head">
+          <h2>Broken-links options</h2>
+          <p>Per-site tweaks for the broken-links analysis. Takes effect on the next scan.</p>
+        </div>
+        <div className="dir-row" style={{ gridTemplateColumns: '1fr' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              disabled={noActive || saveBrokenLinks.isPending}
+              checked={
+                !!(data.config as {
+                  plugins?: { 'broken-links'?: { treat_403_as_broken?: boolean } };
+                }).plugins?.['broken-links']?.treat_403_as_broken
+              }
+              onChange={(e) =>
+                saveBrokenLinks.mutate({ treat_403_as_broken: e.target.checked })
+              }
+            />
+            <span>
+              Treat <code className="mono">403 Forbidden</code> responses as broken
+            </span>
+          </label>
+          <p className="field-help" style={{ marginTop: 6 }}>
+            Off by default — most 403s come from auth-protected pages that work fine in a
+            browser, so flagging them as broken would be a false positive.
+          </p>
         </div>
       </section>
 

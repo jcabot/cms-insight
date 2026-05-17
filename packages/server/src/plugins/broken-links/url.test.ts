@@ -1,20 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { isExternal, isSkippable, normalizeUrl } from './url.js';
+import { isExternal, normalizeUrl, resolveCheckHref } from './url.js';
 
-describe('isSkippable', () => {
-  it('skips mailto/tel/javascript/fragment', () => {
-    expect(isSkippable('mailto:a@b.test')).toBe(true);
-    expect(isSkippable('tel:+1')).toBe(true);
-    expect(isSkippable('javascript:void(0)')).toBe(true);
-    expect(isSkippable('#section')).toBe(true);
+describe('resolveCheckHref', () => {
+  it('resolves internal relative URLs against the site URL', () => {
+    expect(resolveCheckHref('/foo', 'https://example.com/blog/')).toBe('https://example.com/foo');
+    expect(resolveCheckHref('foo/bar', 'https://example.com/blog/')).toBe(
+      'https://example.com/blog/foo/bar',
+    );
   });
-  it('skips relative URLs', () => {
-    expect(isSkippable('/foo')).toBe(true);
-    expect(isSkippable('foo/bar')).toBe(true);
+
+  it('keeps absolute and protocol-relative HTTP URLs checkable', () => {
+    expect(resolveCheckHref('https://other.test/x', 'https://example.com/')).toBe(
+      'https://other.test/x',
+    );
+    expect(resolveCheckHref('//example.com/x', 'https://example.com/')).toBe(
+      'https://example.com/x',
+    );
   });
-  it('does not skip absolute http(s)', () => {
-    expect(isSkippable('https://x.test/')).toBe(false);
-    expect(isSkippable('http://x.test/')).toBe(false);
+
+  it('rejects non-HTTP schemes', () => {
+    expect(resolveCheckHref('mailto:a@b.test', 'https://example.com/')).toBeUndefined();
+    expect(resolveCheckHref('tel:+1', 'https://example.com/')).toBeUndefined();
+    expect(resolveCheckHref('javascript:void(0)', 'https://example.com/')).toBeUndefined();
+    expect(resolveCheckHref('ftp://example.com/file', 'https://example.com/')).toBeUndefined();
+  });
+
+  it('rejects empty and fragment-only hrefs', () => {
+    expect(resolveCheckHref('', 'https://example.com/')).toBeUndefined();
+    expect(resolveCheckHref('   ', 'https://example.com/')).toBeUndefined();
+    expect(resolveCheckHref('#section', 'https://example.com/')).toBeUndefined();
   });
 });
 
