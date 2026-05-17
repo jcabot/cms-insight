@@ -5,6 +5,20 @@ export const SCHEMA_VERSION = 1;
 
 export type DetectionRule = 'D1' | 'D2' | 'D3';
 export type FindingStatus = 'open' | 'fixed';
+export type SuggestionConfidence = 'high' | 'medium' | 'low';
+export type SuggestionState = 'accepted' | 'cleaned' | null;
+
+export interface AltSuggestion {
+  /** Suggested alt text. `null` when the model couldn't produce one (e.g. image unreachable). */
+  text: string | null;
+  confidence: SuggestionConfidence;
+  /** Optional reasoning or caveat from the model. */
+  note?: string;
+  suggested_at: string;
+  source: { provider: string; model: string };
+  /** Tracks whether the user accepted/dismissed; reserved for future UI states. */
+  confirmed?: SuggestionState;
+}
 
 export interface AltFinding {
   id: string;
@@ -30,6 +44,8 @@ export interface AltFinding {
   applied_alt?: string;
   /** ISO timestamp of the last successful apply. */
   applied_at?: string;
+  /** LLM-generated suggestion the user can review and accept. */
+  alt_suggestion?: AltSuggestion;
 }
 
 export interface PostSidecar {

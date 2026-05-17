@@ -8,6 +8,7 @@ import type {
 import { applyAction } from './apply.js';
 import { countAllImages, extractAllImages } from './extract.js';
 import { mergeFindings } from './merge.js';
+import { suggestAltText } from './suggest/index.js';
 import {
   buildIndex,
   listAllSidecars,
@@ -147,6 +148,20 @@ const plugin: AnalysisPlugin = {
   run: runPlugin,
   applyAction,
   formatHeadline,
+  auxiliaryActions: {
+    'suggest-alt-text': {
+      id: 'suggest-alt-text',
+      displayName: 'Suggest alt text',
+      description:
+        'Use a vision-capable LLM to propose alt text for each flagged image. Sends the image plus the post title and surrounding text for context.',
+      requiresLlm: true,
+      inputSchema: {
+        type: 'object',
+        properties: { force: { type: 'boolean' } },
+      },
+      run: suggestAltText,
+    },
+  },
 };
 
 export default plugin;

@@ -95,6 +95,15 @@ export interface ResultsResponse {
 export type DetectionRule = 'D1' | 'D2' | 'D3';
 export type FindingStatus = 'open' | 'fixed';
 
+export interface AltSuggestion {
+  text: string | null;
+  confidence: SuggestionConfidence;
+  note?: string;
+  suggested_at: string;
+  source: { provider: string; model: string };
+  confirmed?: SuggestionState;
+}
+
 export interface AltFinding {
   id: string;
   src: string;
@@ -112,6 +121,8 @@ export interface AltFinding {
   /** Last applied alt text. Pre-fills the edit form so users can re-edit. */
   applied_alt?: string;
   applied_at?: string;
+  /** LLM-generated suggestion the user can review and accept. */
+  alt_suggestion?: AltSuggestion;
 }
 
 export interface FlatAltFinding {

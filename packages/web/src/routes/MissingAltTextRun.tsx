@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type FlatAltFinding, type SetAltEdit } from '../api/client.js';
+import { api, type AltSuggestion, type FlatAltFinding, type SetAltEdit } from '../api/client.js';
 import { ProgressBar } from '../components/ProgressBar.js';
 import { subscribeSse } from '../api/sse.js';
 
@@ -66,6 +66,51 @@ function Thumbnail({ src }: { src: string }): React.ReactElement {
   );
 }
 
+function SuggestionCard({
+  suggestion,
+  busy,
+  onAccept,
+}: {
+  suggestion: AltSuggestion;
+  busy: boolean;
+  onAccept: (text: string) => void;
+}): React.ReactElement {
+  if (suggestion.text === null) {
+    return (
+      <div className="suggestion-card none">
+        <div className="head">
+          <span>✗ no suggestion (model unsure)</span>
+          <span className={`sugg-conf conf-${suggestion.confidence}`}>{suggestion.confidence}</span>
+        </div>
+        {suggestion.note && <div className="note">— {suggestion.note}</div>}
+      </div>
+    );
+  }
+  const isEmpty = suggestion.text === '';
+  return (
+    <div className="suggestion-card">
+      <div className="head">
+        <span>✨ {isEmpty ? 'marked as decorative (empty alt)' : 'suggested alt text'}</span>
+        <span className={`sugg-conf conf-${suggestion.confidence}`}>{suggestion.confidence}</span>
+      </div>
+      {!isEmpty && <div className="url-row">{suggestion.text}</div>}
+      {suggestion.note && <div className="note">— {suggestion.note}</div>}
+      <div className="actions-row">
+        <button
+          type="button"
+          className="primary sm"
+          disabled={busy}
+          onClick={() => onAccept(suggestion.text ?? '')}
+          title="Copy the suggestion into the alt-text input as a pending change. Apply all writes it."
+        >
+          Accept
+        </button>
+        <span className="or">— or edit below —</span>
+      </div>
+    </div>
+  );
+}
+
 function FindingRow({
   flat,
   busy,
@@ -125,6 +170,13 @@ function FindingRow({
             <span className="muted">{f.context_after}…</span>
           </div>
         )}
+        {f.alt_suggestion && !f.not_editable && (
+          <SuggestionCard
+            suggestion={f.alt_suggestion}
+            busy={busy}
+            onAccept={(text) => handleChange(text)}
+          />
+        )}
         {!f.not_editable && (
           <div className="finding-form">
             <input
@@ -177,7 +229,15 @@ export function MissingAltTextRun(): React.ReactElement {
     message?: string;
     finalSummary?: string;
   }>({ running: false });
+  const [suggestProgress, setSuggestProgress] = useState<{
+    running: boolean;
+    done?: number;
+    total?: number;
+    message?: string;
+    finalSummary?: string;
+  }>({ running: false });
   const sseUnsubRef = useRef<(() => void) | null>(null);
+  const suggestSseUnsubRef = useRef<(() => void) | null>(null);
   const [hideFixed, setHideFixed] = useState(true);
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   /** Pending draft alt text per finding id. Absent when the row matches its on-disk state. */
@@ -192,6 +252,7 @@ export function MissingAltTextRun(): React.ReactElement {
   useEffect(() => {
     return () => {
       sseUnsubRef.current?.();
+      suggestSseUnsubRef.current?.();
     };
   }, []);
 
@@ -242,6 +303,46 @@ export function MissingAltTextRun(): React.ReactElement {
   });
 
   const cancelRun = useMutation({ mutationFn: () => api.cancelRun(PLUGIN_ID) });
+
+  const startSuggest = useMutation({
+    mutationFn: (opts: { force?: boolean }) =>
+      api.startAction(PLUGIN_ID, 'suggest-alt-text', opts),
+    onSuccess: () => {
+      suggestSseUnsubRef.current?.();
+      setSuggestProgress({ running: true, message: 'Starting suggestion run…' });
+      const unsub = subscribeSse(
+        `/api/analyses/${PLUGIN_ID}/actions/suggest-alt-text/stream`,
+        {
+          onProgress: (ev) => {
+            if (ev.kind === 'started') {
+              setSuggestProgress({ running: true, message: 'Started' });
+            } else if (ev.kind === 'progress') {
+              setSuggestProgress({
+                running: true,
+                done: ev.done,
+                total: ev.total,
+                message: ev.message,
+              });
+            } else if (ev.kind === 'finished') {
+              setSuggestProgress((p) => ({ ...p, running: false, finalSummary: ev.summary }));
+              qc.invalidateQueries({ queryKey: ['results', PLUGIN_ID] });
+            } else if (ev.kind === 'warn') {
+              setSuggestProgress((p) => ({ ...p, message: `Warning: ${ev.message ?? ''}` }));
+            }
+          },
+          onClosed: () => {
+            setSuggestProgress((p) => ({ ...p, running: false }));
+            qc.invalidateQueries({ queryKey: ['results', PLUGIN_ID] });
+          },
+        },
+      );
+      suggestSseUnsubRef.current = unsub;
+    },
+  });
+
+  const cancelSuggest = useMutation({
+    mutationFn: () => api.cancelAction(PLUGIN_ID, 'suggest-alt-text'),
+  });
 
   const findingsById = useMemo(() => {
     const m = new Map<string, FlatAltFinding>();
@@ -332,9 +433,35 @@ export function MissingAltTextRun(): React.ReactElement {
           >
             Full check
           </button>
+          <button
+            type="button"
+            disabled={
+              !settings?.llmEnabled ||
+              suggestProgress.running ||
+              startSuggest.isPending ||
+              (totals?.findings_open ?? 0) === 0
+            }
+            title={
+              !settings?.llmEnabled
+                ? settings?.llmDisabledReason
+                  ? `LLM disabled: ${settings.llmDisabledReason}`
+                  : 'Set ANTHROPIC_API_KEY to enable AI suggestions'
+                : (totals?.findings_open ?? 0) === 0
+                  ? 'No open findings to suggest alt text for'
+                  : 'Generate alt-text suggestions for every open finding using a vision LLM'
+            }
+            onClick={() => startSuggest.mutate({})}
+          >
+            ✨ Suggest alt text
+          </button>
           {progress.running && (
             <button type="button" onClick={() => cancelRun.mutate()}>
               Cancel
+            </button>
+          )}
+          {suggestProgress.running && (
+            <button type="button" onClick={() => cancelSuggest.mutate()}>
+              Cancel suggest
             </button>
           )}
         </div>
@@ -365,6 +492,22 @@ export function MissingAltTextRun(): React.ReactElement {
           {progress.message && <p className="muted progress-message">{progress.message}</p>}
           {progress.finalSummary && (
             <p className="progress-final">{progress.finalSummary}</p>
+          )}
+        </section>
+      )}
+
+      {(suggestProgress.running || suggestProgress.finalSummary || suggestProgress.message) && (
+        <section className="progress-section">
+          <ProgressBar
+            running={suggestProgress.running}
+            done={suggestProgress.done}
+            total={suggestProgress.total}
+          />
+          {suggestProgress.message && (
+            <p className="muted progress-message">✨ {suggestProgress.message}</p>
+          )}
+          {suggestProgress.finalSummary && (
+            <p className="progress-final">{suggestProgress.finalSummary}</p>
           )}
         </section>
       )}

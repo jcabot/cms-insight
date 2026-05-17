@@ -27,9 +27,19 @@ export class AnthropicProvider implements LlmProvider {
       ? [{ type: 'text' as const, text: req.systemPrompt, cache_control: { type: 'ephemeral' as const } }]
       : req.systemPrompt;
 
-    const messages: Anthropic.MessageParam[] = [
-      { role: 'user', content: req.userMessage },
-    ];
+    type UserContent = Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>;
+    const userContent: UserContent = [];
+    if (req.images && req.images.length > 0) {
+      for (const img of req.images) {
+        userContent.push({
+          type: 'image',
+          source: { type: 'base64', media_type: img.mediaType, data: img.dataBase64 },
+        });
+      }
+    }
+    userContent.push({ type: 'text', text: req.userMessage });
+
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userContent }];
 
     try {
       if (req.responseSchema) {

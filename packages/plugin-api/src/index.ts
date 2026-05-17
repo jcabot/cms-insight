@@ -84,6 +84,13 @@ export interface PluginManifest {
 
 /* ─── LLM abstraction ─────────────────────────────────── */
 
+export interface LlmImageInput {
+  /** Image media type. Anthropic vision supports jpeg/png/gif/webp. */
+  mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  /** Base64-encoded image bytes (no data URI prefix). */
+  dataBase64: string;
+}
+
 export interface LlmCompleteRequest {
   systemPrompt: string;
   userMessage: string;
@@ -92,6 +99,8 @@ export interface LlmCompleteRequest {
   maxTokens?: number;
   /** When set, the response is parsed into `json` using this JSON Schema. */
   responseSchema?: object;
+  /** Optional images delivered to a vision-capable model alongside `userMessage`. */
+  images?: ReadonlyArray<LlmImageInput>;
   signal?: AbortSignal;
 }
 

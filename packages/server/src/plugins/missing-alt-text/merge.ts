@@ -69,6 +69,7 @@ export function mergeFindings(
         not_editable: img.not_editable,
         applied_alt: matched?.applied_alt,
         applied_at: matched?.applied_at,
+        alt_suggestion: matched?.alt_suggestion,
       });
     } else if (opts.preserveFixed && matched?.applied_alt) {
       out.push({
@@ -86,6 +87,7 @@ export function mergeFindings(
         not_editable: img.not_editable,
         applied_alt: matched.applied_alt,
         applied_at: matched.applied_at,
+        alt_suggestion: matched.alt_suggestion,
       });
     }
     // else: fine img — drop. Either it was never tracked, or it was previously fixed
