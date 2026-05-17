@@ -23,6 +23,18 @@ status: publish
 <p>after</p>
 `;
 
+const TWO_LINK_POST = `---
+id: 8
+type: post
+slug: two-links
+title: Two Links
+status: publish
+---
+
+<p><a href="https://a.test/page">link a</a></p>
+<p><a href="https://b.test/page">link b</a></p>
+`;
+
 async function setup(): Promise<{
   dir: string;
   storage: FsPluginStorage;
@@ -100,6 +112,61 @@ describe('broken-links applyAction', () => {
       });
     },
   );
+
+  it('preserves the applied mark on link A when a later keep is applied to link B', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cmsi-broken-links-apply-multi-'));
+    await fs.mkdir(path.join(dir, 'posts'), { recursive: true });
+    await fs.mkdir(path.join(dir, '.cmsinsight', 'broken-links'), { recursive: true });
+    await fs.writeFile(path.join(dir, 'posts', 'two-links.html'), TWO_LINK_POST, 'utf8');
+
+    const parsed = parseFile(TWO_LINK_POST);
+    const bodyHash = hashBytes(parsed.body);
+    const links = buildLinkRecords({
+      body: parsed.body,
+      bodyHash,
+      postId: 8,
+      siteUrl: 'https://example.com/',
+      stripParams: [],
+    });
+    const sidecar: PostSidecar = {
+      schema_version: SCHEMA_VERSION,
+      post_id: 8,
+      type: 'post',
+      slug: 'two-links',
+      file_path: 'posts/two-links.html',
+      body_hash: bodyHash,
+      last_scanned: '2026-01-01T00:00:00.000Z',
+      links,
+    };
+    const storage = new FsPluginStorage(path.join(dir, '.cmsinsight', 'broken-links'));
+    await saveSidecar(storage, sidecar);
+    const ctx = createApplyContext({ contentDir: dir, storage });
+
+    const linkA = sidecar.links.find((l) => l.href === 'https://a.test/page')!;
+    const linkB = sidecar.links.find((l) => l.href === 'https://b.test/page')!;
+
+    await applyAction(ctx, {
+      kind: 'edit',
+      siteUrl: 'https://example.com/',
+      stripParams: [],
+      edits: [{ postType: 'post', slug: 'two-links', linkId: linkA.id, action: 'keep' }],
+    });
+
+    await applyAction(ctx, {
+      kind: 'edit',
+      siteUrl: 'https://example.com/',
+      stripParams: [],
+      edits: [{ postType: 'post', slug: 'two-links', linkId: linkB.id, action: 'keep' }],
+    });
+
+    const refreshed = await loadSidecar(storage, 'post', 'two-links');
+    const refreshedA = refreshed?.links.find((l) => l.href === 'https://a.test/page');
+    const refreshedB = refreshed?.links.find((l) => l.href === 'https://b.test/page');
+    expect(refreshedA?.action?.type).toBe('keep');
+    expect(refreshedA?.action?.applied_at).toEqual(expect.any(String));
+    expect(refreshedB?.action?.type).toBe('keep');
+    expect(refreshedB?.action?.applied_at).toEqual(expect.any(String));
+  });
 
   it('marks a kept link as applied without touching the file', async () => {
     const { dir, storage, sidecar } = await setup();

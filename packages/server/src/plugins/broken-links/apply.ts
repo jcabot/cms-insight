@@ -214,9 +214,9 @@ async function applyForPost(
     stripParams: payload.stripParams,
     previousByHref,
   });
-  for (const l of newLinks) l.action = null;
 
-  // Mark applied actions
+  // Mark applied actions for the edits in this bucket. Other links in the same
+  // post keep whatever previousByHref carried over — don't wipe their history.
   const now = new Date().toISOString();
   for (const edit of bucket.edits) {
     if (edit.action === 'keep') {
