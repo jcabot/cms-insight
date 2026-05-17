@@ -12,25 +12,47 @@ export async function registerAnalysesRoutes(
   ctx: AppContext,
 ): Promise<void> {
   app.get('/api/analyses', async () => {
-    return ctx.runner.list().map((p) => {
-      const run = ctx.runner.getRun(p.plugin.id);
-      return {
-        id: p.plugin.id,
-        displayName: p.plugin.displayName,
-        description: p.plugin.description,
-        version: p.plugin.version,
-        resultsView: p.plugin.resultsView,
-        lastRun: run
-          ? {
-              status: run.status,
-              startedAt: run.startedAt,
-              finishedAt: run.finishedAt,
-              eventCount: run.events.length,
-              lastEvent: run.events[run.events.length - 1],
-            }
-          : undefined,
-      };
-    });
+    const entries = await Promise.all(
+      ctx.runner.list().map(async (p) => {
+        const run = ctx.runner.getRun(p.plugin.id);
+        let lastRun: {
+          status: 'running' | 'finished' | 'cancelled' | 'error';
+          startedAt: string;
+          finishedAt?: string;
+          eventCount: number;
+          lastEvent?: unknown;
+        } | undefined;
+        if (run) {
+          lastRun = {
+            status: run.status,
+            startedAt: run.startedAt,
+            finishedAt: run.finishedAt,
+            eventCount: run.events.length,
+            lastEvent: run.events[run.events.length - 1],
+          };
+        } else {
+          // Fall back to the sidecar index so prior-session runs survive a restart.
+          const idx = await p.storage.read<{ last_run_completed?: string }>('index.json');
+          if (idx?.last_run_completed) {
+            lastRun = {
+              status: 'finished',
+              startedAt: idx.last_run_completed,
+              finishedAt: idx.last_run_completed,
+              eventCount: 0,
+            };
+          }
+        }
+        return {
+          id: p.plugin.id,
+          displayName: p.plugin.displayName,
+          description: p.plugin.description,
+          version: p.plugin.version,
+          resultsView: p.plugin.resultsView,
+          lastRun,
+        };
+      }),
+    );
+    return entries;
   });
 
   app.post(
