@@ -14,6 +14,7 @@ import {
   listAllSidecars,
   loadIndex,
   loadSidecar,
+  pruneOrphanSidecars,
   saveIndex,
   saveSidecar,
   sidecarKey,
@@ -134,17 +135,6 @@ async function* runPlugin(ctx: AnalysisContext): AsyncIterable<ProgressEvent> {
     kind: 'finished',
     summary: `Scanned ${total} post(s); ${idx.totals.findings_open} missing alt / ${idx.totals.total_images} images`,
   };
-}
-
-async function pruneOrphanSidecars(
-  storage: PluginStorage,
-  presentKeys: ReadonlySet<string>,
-): Promise<void> {
-  for await (const key of storage.list()) {
-    if (key === 'index.json' || !key.endsWith('.json')) continue;
-    if (!key.startsWith('posts/') && !key.startsWith('pages/')) continue;
-    if (!presentKeys.has(key)) await storage.delete(key);
-  }
 }
 
 async function formatHeadline(storage: PluginStorage): Promise<string | undefined> {

@@ -14,6 +14,7 @@ import {
   type AltFinding,
   type PostSidecar as AltSidecar,
 } from '../../plugins/missing-alt-text/sidecar.js';
+import { loadIndex as loadGraphIndex } from '../../plugins/link-graph/sidecar.js';
 
 interface FlatLink {
   postType: PostType;
@@ -86,6 +87,11 @@ export async function registerResultsRoutes(
 
       if (id === 'missing-alt-text') {
         return buildMissingAltResults(reg.storage);
+      }
+      if (id === 'link-graph') {
+        // The whole graph (nodes/edges/totals) lives in graph.json; the web view
+        // consumes it directly and filters client-side.
+        return { index: await loadGraphIndex(reg.storage) };
       }
       // Default shape (broken-links and any other link-style plugin).
       return buildBrokenLinksResults(reg.storage);
