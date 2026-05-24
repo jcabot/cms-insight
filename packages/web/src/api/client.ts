@@ -151,6 +151,44 @@ export interface SetAltEdit {
   altText: string;
 }
 
+/* ─── Link graph ────────────────────────────────────────────── */
+
+export interface GraphNode {
+  /** `"<type>:<slug>"`. */
+  id: string;
+  /** WordPress numeric id, when known. */
+  post_id: number | undefined;
+  type: 'post' | 'page';
+  slug: string;
+  title: string;
+  file_path: string;
+  in_degree: number;
+  out_degree: number;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface GraphTotals {
+  nodes: number;
+  edges: number;
+  orphans_no_in: number;
+  orphans_no_out: number;
+  isolated: number;
+}
+
+export interface LinkGraphResults {
+  index?: {
+    schema_version: number;
+    last_run_completed: string;
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+    totals: GraphTotals;
+  };
+}
+
 export interface SettingsResponse {
   root: string;
   activeSiteId?: string;
@@ -317,6 +355,8 @@ export const api = {
     ),
   altResults: () =>
     jsonFetch<MissingAltTextResults>('/api/analyses/missing-alt-text/results'),
+  linkGraphResults: () =>
+    jsonFetch<LinkGraphResults>('/api/analyses/link-graph/results'),
   applySetAlt: (edits: SetAltEdit[]) =>
     jsonFetch<{ ok: boolean; message?: string; changedFiles?: string[] }>(
       '/api/analyses/missing-alt-text/apply',

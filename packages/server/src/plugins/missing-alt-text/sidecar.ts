@@ -1,5 +1,16 @@
 import type { PluginStorage, PostType } from '@cms-insight/plugin-api';
 import type { AttrQuote } from '../../host/surgical-edit.js';
+import {
+  type BasePostSidecar,
+  sidecarKey,
+  loadSidecar as sharedLoadSidecar,
+  saveSidecar as sharedSaveSidecar,
+  loadIndex as sharedLoadIndex,
+  saveIndex as sharedSaveIndex,
+  listAllSidecars as sharedListAllSidecars,
+} from '../_shared/per-post-sidecar.js';
+
+export { sidecarKey, pruneOrphanSidecars } from '../_shared/per-post-sidecar.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -48,14 +59,7 @@ export interface AltFinding {
   alt_suggestion?: AltSuggestion;
 }
 
-export interface PostSidecar {
-  schema_version: number;
-  post_id: number | undefined;
-  type: PostType;
-  slug: string;
-  file_path: string;
-  body_hash: string;
-  last_scanned: string;
+export interface PostSidecar extends BasePostSidecar {
   findings: AltFinding[];
 }
 
@@ -78,45 +82,28 @@ export interface IndexFile {
   posts_with_issues: PostIssueSummary[];
 }
 
-export function sidecarKey(type: PostType, slug: string): string {
-  return type === 'post' ? `posts/${slug}.json` : `pages/${slug}.json`;
-}
-
-export async function loadSidecar(
+export function loadSidecar(
   storage: PluginStorage,
   type: PostType,
   slug: string,
 ): Promise<PostSidecar | undefined> {
-  const data = await storage.read<PostSidecar>(sidecarKey(type, slug));
-  if (!data) return undefined;
-  if (data.schema_version !== SCHEMA_VERSION) return undefined;
-  return data;
+  return sharedLoadSidecar<PostSidecar>(storage, type, slug, SCHEMA_VERSION);
 }
 
-export async function saveSidecar(storage: PluginStorage, sidecar: PostSidecar): Promise<void> {
-  await storage.write(sidecarKey(sidecar.type, sidecar.slug), sidecar);
+export function saveSidecar(storage: PluginStorage, sidecar: PostSidecar): Promise<void> {
+  return sharedSaveSidecar(storage, sidecar);
 }
 
-export async function loadIndex(storage: PluginStorage): Promise<IndexFile | undefined> {
-  const idx = await storage.read<IndexFile>('index.json');
-  if (!idx || idx.schema_version !== SCHEMA_VERSION) return undefined;
-  return idx;
+export function loadIndex(storage: PluginStorage): Promise<IndexFile | undefined> {
+  return sharedLoadIndex<IndexFile>(storage, SCHEMA_VERSION);
 }
 
-export async function saveIndex(storage: PluginStorage, index: IndexFile): Promise<void> {
-  await storage.write('index.json', index);
+export function saveIndex(storage: PluginStorage, index: IndexFile): Promise<void> {
+  return sharedSaveIndex(storage, index);
 }
 
-export async function* listAllSidecars(
-  storage: PluginStorage,
-): AsyncIterable<PostSidecar> {
-  for await (const key of storage.list()) {
-    if (key === 'index.json') continue;
-    if (!key.endsWith('.json')) continue;
-    if (!key.startsWith('posts/') && !key.startsWith('pages/')) continue;
-    const sc = await storage.read<PostSidecar>(key);
-    if (sc && sc.schema_version === SCHEMA_VERSION) yield sc;
-  }
+export function listAllSidecars(storage: PluginStorage): AsyncIterable<PostSidecar> {
+  return sharedListAllSidecars<PostSidecar>(storage, SCHEMA_VERSION);
 }
 
 export function buildIndex(

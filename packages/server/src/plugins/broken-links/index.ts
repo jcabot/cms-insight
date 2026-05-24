@@ -12,6 +12,7 @@ import {
   listAllSidecars,
   loadIndex,
   loadSidecar,
+  pruneOrphanSidecars,
   saveIndex,
   saveSidecar,
   sidecarKey,
@@ -282,17 +283,6 @@ function indexByHref(links: ReadonlyArray<LinkRecord>): Map<string, LinkRecord> 
   const out = new Map<string, LinkRecord>();
   for (const l of links) if (!out.has(l.href)) out.set(l.href, l);
   return out;
-}
-
-async function pruneOrphanSidecars(
-  storage: PluginStorage,
-  presentKeys: ReadonlySet<string>,
-): Promise<void> {
-  for await (const key of storage.list()) {
-    if (key === 'index.json' || !key.endsWith('.json')) continue;
-    if (!key.startsWith('posts/') && !key.startsWith('pages/')) continue;
-    if (!presentKeys.has(key)) await storage.delete(key);
-  }
 }
 
 function countSkipped(sidecars: ReadonlyArray<PostSidecar>): number {
