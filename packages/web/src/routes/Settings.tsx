@@ -29,9 +29,20 @@ export function Settings(): React.ReactElement {
   const saveBrokenLinks = useMutation({
     mutationFn: (next: { treat_403_as_broken: boolean }) =>
       api.putSettings({ plugins: { 'broken-links': next } }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['settings'] });
-      setToast({ kind: 'success', text: 'Broken-links settings saved.' });
+      const n = res.reclassified?.linksChanged ?? 0;
+      if (n > 0) {
+        qc.invalidateQueries({ queryKey: ['results', 'broken-links'] });
+        qc.invalidateQueries({ queryKey: ['sites'] });
+      }
+      setToast({
+        kind: 'success',
+        text:
+          n > 0
+            ? `Saved — reclassified ${n} existing 403 link${n === 1 ? '' : 's'}.`
+            : 'Broken-links settings saved.',
+      });
     },
     onError: (err) => setToast({ kind: 'error', text: (err as Error).message }),
   });

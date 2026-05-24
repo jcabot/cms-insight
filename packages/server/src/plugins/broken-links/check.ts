@@ -3,6 +3,7 @@ import { request as undiciRequest, Agent, type Dispatcher } from 'undici';
 import { hostOf, registrableDomain } from './url.js';
 import { classify, type ClassifierRules } from './classifier/rules.js';
 import type { Verdict } from './sidecar.js';
+import { verdictFor403 } from './verdict-403.js';
 
 export interface CheckResult {
   http_status?: number;
@@ -270,13 +271,11 @@ export function createChecker(config: CheckerConfig, rules: ClassifierRules): Ch
       hostQueue.run(host, async () => {
         try {
           const r = await withRetries(href, signal);
-          if (r.status === 403 && !config.treat_403_as_broken) {
+          if (r.status === 403) {
             return {
               http_status: r.status,
               final_url: r.finalUrl,
-              verdict: 'OK',
-              reason_code: 'http_403_protected',
-              reason_detail: 'Treated as OK per treat_403_as_broken=false (auth-protected, not actually broken).',
+              ...verdictFor403(!!config.treat_403_as_broken),
               cross_domain_redirect: r.crossDomainRedirect,
             };
           }

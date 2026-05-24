@@ -266,7 +266,11 @@ export const api = {
     }),
   settings: () => jsonFetch<SettingsResponse>('/api/settings'),
   putSettings: (body: Record<string, unknown>) =>
-    jsonFetch<{ ok: boolean; config: Record<string, unknown> }>('/api/settings', {
+    jsonFetch<{
+      ok: boolean;
+      config: Record<string, unknown>;
+      reclassified?: { linksChanged: number; postsChanged: number };
+    }>('/api/settings', {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
