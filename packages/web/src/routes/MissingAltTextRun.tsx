@@ -367,6 +367,44 @@ export function MissingAltTextRun(): React.ReactElement {
     return out;
   }, [drafts, findingsById]);
 
+  // Suggestions whose Accept would actually change the staged state. Mirrors the
+  // per-row handleChange contract: a suggestion that already matches the current
+  // value (draft if present, else on-disk alt) is a no-op and excluded.
+  const pendingSuggestions = useMemo<{ id: string; text: string }[]>(() => {
+    const out: { id: string; text: string }[] = [];
+    for (const flat of data?.findings ?? []) {
+      const f = flat.finding;
+      if (f.not_editable) continue;
+      const sug = f.alt_suggestion;
+      if (!sug || sug.text === null) continue;
+      const current = drafts[f.id] ?? f.applied_alt ?? '';
+      if (sug.text === current) continue;
+      out.push({ id: f.id, text: sug.text });
+    }
+    return out;
+  }, [data, drafts]);
+
+  // Bulk-accept: stage every actionable suggestion as a pending draft, exactly as if
+  // the user clicked Accept on each row. Drafts then flow into the normal Apply all.
+  const acceptAllSuggestions = (): void => {
+    if (pendingSuggestions.length === 0) return;
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const { id, text } of pendingSuggestions) {
+        const applied = findingsById.get(id)?.finding.applied_alt ?? '';
+        // Same rule as handleChange: a value equal to disk drops the draft.
+        if (text === applied) delete next[id];
+        else next[id] = text;
+      }
+      return next;
+    });
+    const n = pendingSuggestions.length;
+    setToast({
+      kind: 'success',
+      text: `Accepted ${n} suggestion${n === 1 ? '' : 's'} — review, then Apply all.`,
+    });
+  };
+
   // Drop drafts that no longer have a corresponding finding (e.g. after a re-run).
   useEffect(() => {
     setDrafts((prev) => {
@@ -557,6 +595,15 @@ export function MissingAltTextRun(): React.ReactElement {
           Hide fixed findings
         </label>
         <span className="apply-bar-spacer" />
+        <button
+          type="button"
+          disabled={busy || pendingSuggestions.length === 0}
+          onClick={acceptAllSuggestions}
+          title="Stage every AI suggestion as a pending change. Apply all then writes them to disk."
+        >
+          ✨ Accept all suggestions
+          {pendingSuggestions.length > 0 ? ` (${pendingSuggestions.length})` : ''}
+        </button>
         <span className="muted apply-bar-count">
           {draftCount} pending change{draftCount === 1 ? '' : 's'}
         </span>
