@@ -10,6 +10,7 @@ export function Settings(): React.ReactElement {
   });
 
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [rootDraft, setRootDraft] = useState<string | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -42,6 +43,23 @@ export function Settings(): React.ReactElement {
           n > 0
             ? `Saved — reclassified ${n} existing 403 link${n === 1 ? '' : 's'}.`
             : 'Broken-links settings saved.',
+      });
+    },
+    onError: (err) => setToast({ kind: 'error', text: (err as Error).message }),
+  });
+
+  const changeRoot = useMutation({
+    mutationFn: (root: string) => api.setRoot(root),
+    onSuccess: (res) => {
+      // The root swap changes sites, active site, content, and every analysis result —
+      // drop all cached queries so the whole app re-fetches against the new root.
+      qc.invalidateQueries();
+      setRootDraft(null);
+      setToast({
+        kind: 'success',
+        text: res.activeSiteId
+          ? `Root changed — active site is now "${res.activeSiteId}".`
+          : 'Root changed — no sites registered there yet. Add one from Home.',
       });
     },
     onError: (err) => setToast({ kind: 'error', text: (err as Error).message }),
@@ -81,8 +99,32 @@ export function Settings(): React.ReactElement {
         <div className="section-head">
           <h2>Active site</h2>
           <p>
-            Multi-site root: <code className="mono">{data.root}</code>
+            Multi-site root — the parent directory whose subfolders are wpsync content dirs.
+            Changing it loads that root's sites and re-activates its last-used site.
           </p>
+        </div>
+        <div className="dir-row" style={{ gridTemplateColumns: '1fr auto' }}>
+          <input
+            className="mono"
+            value={rootDraft ?? data.root}
+            spellCheck={false}
+            disabled={changeRoot.isPending}
+            onChange={(e) => setRootDraft(e.target.value)}
+            aria-label="Multi-site root path"
+          />
+          <button
+            onClick={() => {
+              const next = (rootDraft ?? data.root).trim();
+              if (next && next !== data.root) changeRoot.mutate(next);
+            }}
+            disabled={
+              changeRoot.isPending ||
+              !(rootDraft ?? '').trim() ||
+              (rootDraft ?? data.root).trim() === data.root
+            }
+          >
+            {changeRoot.isPending ? 'Switching…' : 'Change root'}
+          </button>
         </div>
         <div className="dir-row" style={{ gridTemplateColumns: '1fr' }}>
           {noActive ? (

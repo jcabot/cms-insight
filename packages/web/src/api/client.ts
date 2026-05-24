@@ -265,6 +265,14 @@ export const api = {
       method: 'POST',
     }),
   settings: () => jsonFetch<SettingsResponse>('/api/settings'),
+  setRoot: (root: string) =>
+    jsonFetch<{
+      ok: boolean;
+      root: string;
+      activeSiteId?: string;
+      contentDir: string;
+      siteUrl: string;
+    }>('/api/root', { method: 'POST', body: JSON.stringify({ root }) }),
   putSettings: (body: Record<string, unknown>) =>
     jsonFetch<{
       ok: boolean;

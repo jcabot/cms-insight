@@ -4,7 +4,7 @@ import { loadConfig } from './config/load.js';
 import { createPluginRunner, type PluginRunner } from './plugins/runner.js';
 import { createLlmProvider } from './llm/factory.js';
 import { loadEnvFiles } from './dotenv.js';
-import type { SiteRegistryService } from './sites/registry.js';
+import { loadOrCreateRegistry, type SiteRegistryService } from './sites/registry.js';
 
 export interface AppContext {
   /** Absolute path to the multi-site root. */
@@ -25,6 +25,8 @@ export interface AppContext {
   llmDisabledReason: string | undefined;
   /** Switch the active site. Pass undefined to clear active. Persists to registry + state. */
   setActiveSite(siteId: string | undefined): Promise<void>;
+  /** Swap the multi-site root: load that root's registry, then activate its saved/first site. */
+  setRoot(newRoot: string): Promise<void>;
   /** Refresh `runner.config` etc. after a config write that didn't change site. */
   refreshConfig(updated: CmsInsightConfig): void;
 }
@@ -62,8 +64,11 @@ function noopRunner(): PluginRunner {
 export interface CreateAppContextOptions {
   root: string;
   registry: SiteRegistryService;
-  /** Persist the chosen active site id (e.g. into ~/.cmsinsight/state.json). */
-  onActiveChanged?: (siteId: string | undefined) => Promise<void>;
+  /**
+   * Persist the chosen root + active site id (e.g. into ~/.cmsinsight/state.json).
+   * `root` is passed explicitly because it can change at runtime via `setRoot`.
+   */
+  onActiveChanged?: (siteId: string | undefined, root: string) => Promise<void>;
 }
 
 export async function createAppContext(opts: CreateAppContextOptions): Promise<AppContext> {
@@ -85,7 +90,7 @@ export async function createAppContext(opts: CreateAppContextOptions): Promise<A
         ctx.config = CONFIG_DEFAULTS;
         ctx.runner = noopRunner();
         ctx.llmDisabledReason = undefined;
-        if (opts.onActiveChanged) await opts.onActiveChanged(undefined);
+        if (opts.onActiveChanged) await opts.onActiveChanged(undefined, ctx.root);
         return;
       }
 
@@ -138,7 +143,18 @@ export async function createAppContext(opts: CreateAppContextOptions): Promise<A
       if (ctx.registry.activeId() !== siteId) {
         await ctx.registry.setActive(siteId);
       }
-      if (opts.onActiveChanged) await opts.onActiveChanged(siteId);
+      if (opts.onActiveChanged) await opts.onActiveChanged(siteId, ctx.root);
+    },
+    async setRoot(newRoot: string): Promise<void> {
+      // Throws if the directory is missing; do this before tearing down current state.
+      const registry = await loadOrCreateRegistry(newRoot);
+      // Cancel any in-flight jobs on the current runner before swapping roots.
+      for (const p of ctx.runner.list()) ctx.runner.cancelRun(p.plugin.id);
+      ctx.root = registry.root;
+      ctx.registry = registry;
+      // Activate the new root's saved choice, else its first site, else clear.
+      const nextId = registry.activeId() ?? registry.list()[0]?.id;
+      await ctx.setActiveSite(nextId);
     },
     refreshConfig(updated: CmsInsightConfig): void {
       Object.assign(ctx.config, updated);

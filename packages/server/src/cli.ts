@@ -84,8 +84,8 @@ program
     const ctx = await createAppContext({
       root: initialRoot,
       registry,
-      onActiveChanged: async (siteId) => {
-        await saveState({ lastRootPath: initialRoot, lastActiveSiteId: siteId });
+      onActiveChanged: async (siteId, root) => {
+        await saveState({ lastRootPath: root, lastActiveSiteId: siteId });
       },
     });
 
@@ -106,9 +106,18 @@ program
         );
       }
     } else {
-      console.log(
-        `[cms-insight] root: ${initialRoot} · no sites yet — open the dashboard and add one`,
-      );
+      const candidateCount = await countWpsyncSubfolders(initialRoot);
+      if (candidateCount > 0) {
+        console.log(
+          `[cms-insight] root: ${initialRoot} · no sites yet — open the dashboard and add one (${candidateCount} wpsync folder${candidateCount === 1 ? '' : 's'} detected)`,
+        );
+      } else {
+        console.warn(
+          `[cms-insight] root: ${initialRoot} · no sites registered and no wpsync content folders found here.\n` +
+            `  This is usually the wrong root. Pass --root <path> pointing at the parent of your wpsync content dirs,\n` +
+            `  e.g. a directory whose subfolders each contain a .wpsync/config.toml.`,
+        );
+      }
     }
 
     const app = await buildServer(ctx);
@@ -126,6 +135,21 @@ program
       }
     }
   });
+
+async function countWpsyncSubfolders(root: string): Promise<number> {
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  let count = 0;
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name.startsWith('.')) continue;
+    try {
+      await fs.access(path.join(root, e.name, '.wpsync', 'config.toml'));
+      count++;
+    } catch {
+      /* not a wpsync dir */
+    }
+  }
+  return count;
+}
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err);

@@ -44,4 +44,24 @@ export async function registerSettingsRoutes(
       return { ok: true, config: updated, reclassified };
     },
   );
+
+  app.post(
+    '/api/root',
+    async (req: FastifyRequest<{ Body: { root?: string } }>, reply: FastifyReply) => {
+      const root = req.body?.root?.trim();
+      if (!root) return reply.status(400).send({ ok: false, message: 'root is required' });
+      try {
+        await ctx.setRoot(root);
+        return {
+          ok: true,
+          root: ctx.root,
+          activeSiteId: ctx.activeSiteId,
+          contentDir: ctx.contentDir,
+          siteUrl: ctx.siteUrl,
+        };
+      } catch (err) {
+        return reply.status(400).send({ ok: false, message: (err as Error).message });
+      }
+    },
+  );
 }
