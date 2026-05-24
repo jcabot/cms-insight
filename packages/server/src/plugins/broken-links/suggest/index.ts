@@ -152,74 +152,106 @@ export async function* suggestReplacements(
     message: `Querying ${ctx.llm.name} (${ctx.llm.model}) — ${totalBatches} batch(es) of ≤${batchSize}…`,
   };
 
+  const now = new Date().toISOString();
+  const source = { provider: ctx.llm.name, model: ctx.llm.model };
+
   let inputTokens = 0;
   let outputTokens = 0;
   let cachedTokens = 0;
   let suggestionsApplied = 0;
   let batchesDone = 0;
+  let linksDone = 0;
 
-  // Per-sidecar accumulator so we save each sidecar exactly once after all its links are done.
+  // Snapshots of the sidecars we've written into, saved incrementally per batch so partial
+  // results survive a cancel or a dropped SSE connection.
   const dirtySidecars = new Map<string, PostSidecar>();
-  const writeQueue: Promise<void>[] = [];
 
-  const results: BatchResult[] = await runBatches({
+  // Producer/consumer queue: runBatches resolves batches concurrently and hands each one back
+  // via onBatchDone as it lands, so we can stream progress and persist as we go instead of
+  // blocking on a single Promise.all (the Phase-B pattern in ../index.ts).
+  const arrived: BatchResult[] = [];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  const work = runBatches({
     llm: ctx.llm,
     siteUrl: ctx.siteUrl,
     links: payloadLinks,
     batchSize,
     concurrency,
     signal: ctx.signal,
-    onBatchDone: () => {
-      batchesDone++;
+    onBatchDone: (r) => {
+      arrived.push(r);
+      wake?.();
+      wake = undefined;
     },
+  }).finally(() => {
+    closed = true;
+    wake?.();
+    wake = undefined;
   });
 
-  const now = new Date().toISOString();
-  const source = { provider: ctx.llm.name, model: ctx.llm.model };
-
-  for (const res of results) {
+  while (!closed || arrived.length > 0) {
+    if (arrived.length === 0) {
+      await new Promise<void>((r) => {
+        wake = r;
+      });
+      continue;
+    }
+    const res = arrived.shift()!;
+    batchesDone++;
+    linksDone += Math.min(batchSize, payloadLinks.length - res.index * batchSize);
     inputTokens += res.usage.input_tokens;
     outputTokens += res.usage.output_tokens;
     cachedTokens += res.usage.cached_input_tokens;
+
     if (res.error) {
-      yield { kind: 'warn', message: `batch ${res.index + 1} failed: ${res.error}` };
-      continue;
-    }
-    if (!res.output) continue;
-    for (const s of res.output.suggestions) {
-      const target = targetById.get(s.id);
-      if (!target) continue;
-      const sidecarKey = `${target.sidecar.type}/${target.sidecar.slug}`;
-      const sidecarSnapshot = dirtySidecars.get(sidecarKey) ?? target.sidecar;
-      const link = sidecarSnapshot.links.find((l) => l.id === target.link.id);
-      if (!link) continue;
-      const suggestion: LinkSuggestion = {
-        url: typeof s.suggestion === 'string' && s.suggestion.length > 0 ? s.suggestion : null,
-        confidence: s.confidence,
-        ...(s.note ? { note: s.note } : {}),
-        suggested_at: now,
-        source,
-        confirmed: null,
+      yield {
+        kind: 'warn',
+        message: `batch ${res.index + 1}/${totalBatches} failed: ${res.error}`,
       };
-      link.suggestion = suggestion;
-      dirtySidecars.set(sidecarKey, sidecarSnapshot);
-      suggestionsApplied++;
+    } else if (res.output) {
+      const touched = new Set<string>();
+      for (const s of res.output.suggestions) {
+        const target = targetById.get(s.id);
+        if (!target) continue;
+        const key = `${target.sidecar.type}/${target.sidecar.slug}`;
+        const snapshot = dirtySidecars.get(key) ?? target.sidecar;
+        const link = snapshot.links.find((l) => l.id === target.link.id);
+        if (!link) continue;
+        const suggestion: LinkSuggestion = {
+          url: typeof s.suggestion === 'string' && s.suggestion.length > 0 ? s.suggestion : null,
+          confidence: s.confidence,
+          ...(s.note ? { note: s.note } : {}),
+          suggested_at: now,
+          source,
+          confirmed: null,
+        };
+        link.suggestion = suggestion;
+        dirtySidecars.set(key, snapshot);
+        touched.add(key);
+        suggestionsApplied++;
+      }
+      // Persist this batch's posts immediately so a later cancel can't discard them.
+      for (const key of touched) await saveSidecar(ctx.storage, dirtySidecars.get(key)!);
     }
+
+    yield {
+      kind: 'progress',
+      done: linksDone,
+      total: payloadLinks.length,
+      message: `Batch ${batchesDone}/${totalBatches} · ${suggestionsApplied} suggestion(s) so far`,
+    };
+  }
+  await work; // surface any error that escaped the queue
+
+  if (ctx.signal.aborted) {
+    yield {
+      kind: 'finished',
+      summary: `Cancelled — kept ${suggestionsApplied} suggestion(s) from ${batchesDone}/${totalBatches} batch(es)`,
+    };
+    return;
   }
 
-  for (const sc of dirtySidecars.values()) {
-    writeQueue.push(saveSidecar(ctx.storage, sc));
-  }
-  await Promise.all(writeQueue);
-
-  yield {
-    kind: 'progress',
-    done: payloadLinks.length,
-    total: payloadLinks.length,
-    message: `Wrote ${suggestionsApplied} suggestions to ${dirtySidecars.size} post(s)`,
-  };
-
-  void batchesDone;
   const cost = estimateCost(inputTokens - cachedTokens, outputTokens, cachedTokens);
   yield {
     kind: 'finished',
