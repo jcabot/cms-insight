@@ -1312,6 +1312,20 @@ label { cursor: pointer; user-select: none; }
 .toast.error { background: var(--broken); }
 .toast.success { background: var(--ok); }
 
+.toast-close {
+  flex: none;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: 0.8;
+}
+.toast-close:hover { opacity: 1; }
+
 @keyframes toastIn {
   from { transform: translateY(8px); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }

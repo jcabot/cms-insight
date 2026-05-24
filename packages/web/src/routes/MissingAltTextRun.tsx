@@ -244,7 +244,9 @@ export function MissingAltTextRun(): React.ReactElement {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (!toast) return;
+    // Errors are usually actionable (e.g. "re-scan first") — leave them up until the
+    // user dismisses them. Only fade success toasts.
+    if (!toast || toast.kind !== 'success') return;
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
@@ -387,6 +389,30 @@ export function MissingAltTextRun(): React.ReactElement {
         });
         qc.invalidateQueries({ queryKey: ['results', PLUGIN_ID] });
         qc.invalidateQueries({ queryKey: ['sites'] });
+        return;
+      }
+      // Partial success: apply is per-post, so a failing post (e.g. a stale body hash)
+      // doesn't roll back posts that already landed. Clear drafts for findings whose file
+      // was actually written, keep the rest staged, and refresh to reflect what landed.
+      const changed = new Set(res.changedFiles ?? []);
+      const appliedIds = edits
+        .filter((e) => {
+          const fp = findingsById.get(e.findingId)?.filePath;
+          return fp !== undefined && changed.has(fp);
+        })
+        .map((e) => e.findingId);
+      if (appliedIds.length > 0) {
+        setDrafts((prev) => {
+          const next = { ...prev };
+          for (const id of appliedIds) delete next[id];
+          return next;
+        });
+        qc.invalidateQueries({ queryKey: ['results', PLUGIN_ID] });
+        qc.invalidateQueries({ queryKey: ['sites'] });
+        setToast({
+          kind: 'error',
+          text: `Applied ${appliedIds.length} of ${edits.length}. ${res.message ?? 'Some edits failed.'}`,
+        });
       } else {
         setToast({ kind: 'error', text: res.message ?? 'Apply failed' });
       }
@@ -607,6 +633,15 @@ export function MissingAltTextRun(): React.ReactElement {
       {toast && (
         <div className={`toast ${toast.kind}`}>
           <span>{toast.text}</span>
+          <button
+            type="button"
+            className="toast-close"
+            onClick={() => setToast(null)}
+            aria-label="Dismiss"
+            title="Dismiss"
+          >
+            ×
+          </button>
         </div>
       )}
     </article>
